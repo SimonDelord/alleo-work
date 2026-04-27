@@ -4,6 +4,8 @@ This folder is split into two **parts** you can treat as separate concerns (or f
 
 ## `csv/` — CSV and S3 → Kafka
 
+**End-to-end S3 + Kafka demo (uploader + producer):** see **[`csv/README.md`](csv/README.md)**.
+
 | File | Purpose |
 |------|--------|
 | `csv_producer.py` | Read a local CSV path, send each row as JSON to Kafka |
