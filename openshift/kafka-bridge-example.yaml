@@ -1,0 +1,74 @@
+# Example only: point KAFKA_BOOTSTRAP_SERVERS at your cluster Kafka (Strimzi route,
+# AMQ Streams service, or managed Kafka). Build/push images from ./poc then set
+# image: to your registry path.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-poc-env
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "REPLACE_ME:9092"
+  KAFKA_TOPIC_CSV: "poc.csv.rows"
+  KAFKA_TOPIC_MODBUS: "poc.modbus.readings"
+  CSV_PATH: "/data/sample.csv"
+  MODBUS_HOST: "REPLACE_MODBUS_SERVICE"
+  MODBUS_PORT: "502"
+  MODBUS_POLL_INTERVAL_SEC: "1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: poc-csv-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poc-csv-producer
+  template:
+    metadata:
+      labels:
+        app: poc-csv-producer
+    spec:
+      containers:
+        - name: csv-producer
+          image: quay.io/example/poc-csv-producer:latest
+          envFrom:
+            - configMapRef:
+                name: kafka-poc-env
+          volumeMounts:
+            - name: csv
+              mountPath: /data
+      volumes:
+        - name: csv
+          configMap:
+            name: poc-sample-csv
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: poc-sample-csv
+data:
+  sample.csv: |
+    device_id,timestamp_c,metric,value
+    PLC-A,2026-04-27T12:00:00Z,temp_c,21.5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: poc-modbus-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poc-modbus-producer
+  template:
+    metadata:
+      labels:
+        app: poc-modbus-producer
+    spec:
+      containers:
+        - name: modbus-producer
+          image: quay.io/example/poc-modbus-producer:latest
+          envFrom:
+            - configMapRef:
+                name: kafka-poc-env

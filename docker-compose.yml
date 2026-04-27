@@ -1,0 +1,58 @@
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.5
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - INTERNAL://redpanda:29092,EXTERNAL://localhost:9092
+    ports:
+      - "9092:9092"
+
+  modbus-sim:
+    build:
+      context: ./poc
+      dockerfile: Dockerfile.modbus-sim
+    environment:
+      MODBUS_SIM_HOST: "0.0.0.0"
+      MODBUS_SIM_PORT: "5020"
+    ports:
+      - "5020:5020"
+
+  csv-producer:
+    build:
+      context: ./poc
+      dockerfile: Dockerfile.csv
+    depends_on:
+      - redpanda
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      KAFKA_TOPIC_CSV: poc.csv.rows
+      CSV_PATH: /data/sample.csv
+      CSV_SEND_INTERVAL_SEC: "2"
+
+  modbus-producer:
+    build:
+      context: ./poc
+      dockerfile: Dockerfile.modbus
+    depends_on:
+      - redpanda
+      - modbus-sim
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      KAFKA_TOPIC_MODBUS: poc.modbus.readings
+      MODBUS_HOST: modbus-sim
+      MODBUS_PORT: "5020"
+      MODBUS_UNIT_ID: "0"
+      MODBUS_POLL_INTERVAL_SEC: "1"

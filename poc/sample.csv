@@ -1,0 +1,4 @@
+device_id,timestamp_c,metric,value
+PLC-A,2026-04-27T12:00:00Z,temp_c,21.5
+PLC-A,2026-04-27T12:00:01Z,pressure_bar,1.02
+PLC-B,2026-04-27T12:00:02Z,temp_c,19.8
