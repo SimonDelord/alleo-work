@@ -9,7 +9,7 @@ This folder is split into two **parts** you can treat as separate concerns (or f
 | File | Purpose |
 |------|--------|
 | `csv_producer.py` | Read a local CSV path, send each row as JSON to Kafka |
-| `Dockerfile.csv` | Image for `csv_producer` (Redpanda demo) |
+| `Dockerfile.csv` | Image for `csv_producer` (reads a mounted CSV path; optional use) |
 | `sample.csv` | Small demo CSV |
 | `s3_csv_producer.py` | Stream an object from S3, parse CSV, produce to one or more topics |
 | `Dockerfile.s3-csv` | Image for S3 → Kafka worker |
@@ -33,8 +33,8 @@ OpenShift build contexts for these images use **`contextDir: poc/csv`** (see `op
 | `Dockerfile.modbus-sim` | Image for the simulator |
 | `requirements.txt` | `kafka-python` + `pymodbus` |
 
-OpenShift / Compose build context: **`poc/modbus`**.
+OpenShift build context: **`poc/modbus`**.
 
 ## Root `poc/README.md`
 
-You are reading it. For end-to-end compose and cluster notes, see the [repository README](../README.md).
+You are reading it. For cluster setup and the S3→Kafka story, see the [repository README](../README.md) and [`csv/README.md`](csv/README.md).

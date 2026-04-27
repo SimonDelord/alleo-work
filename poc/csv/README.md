@@ -1,6 +1,6 @@
 # CSV demo: S3 handoff → Kafka
 
-This folder contains the pieces for an end-to-end **demo** on OpenShift (or locally with Compose) that looks like a simple **file-based integration**: something creates a CSV, drops it in object storage, and a separate service **pulls** that file and **streams** each row to Kafka.
+This folder contains the pieces for an end-to-end **demo** on **OpenShift** that looks like a simple **file-based integration**: something creates a CSV, drops it in object storage, and a separate service **pulls** that file and **streams** each row to Kafka.
 
 ## What we are simulating
 
@@ -43,7 +43,7 @@ This folder contains the pieces for an end-to-end **demo** on OpenShift (or loca
 |------|--------------------|--------|
 | Uploader | `s3_csv_uploader.py`, `Dockerfile.s3-csv-uploader` | Env: `S3_BUCKET`, `S3_KEY`, `UPLOAD_INTERVAL_SEC`, `CSV_MODE=fleet`, `BUMP_TIMESTAMPS=1` so each upload is slightly different (helps ETag). |
 | S3 → Kafka | `s3_csv_producer.py`, `Dockerfile.s3-csv` | Env: `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPICS` or `KAFKA_TOPIC_CSV`, `S3_BUCKET`, `S3_KEY`, `PROCESS_MODE=loop`, `S3_POLL_INTERVAL_SEC`. |
-| Optional local-only CSV | `csv_producer.py`, `Dockerfile.csv` | Reads a file path; used with Redpanda in root `docker-compose.yml`, not the S3 story. |
+| Optional file-based CSV | `csv_producer.py`, `Dockerfile.csv` | Reads a CSV path from disk; not part of the S3 pipeline—use only if you mount a file in a pod. |
 | Data | `fleet_telemetry_data.py` | Shared rows for the uploader. |
 
 **AWS access** for both S3 clients is through normal credentials (for example a Kubernetes `Secret` with `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` on the cluster), not in this repo.
@@ -53,9 +53,5 @@ This folder contains the pieces for an end-to-end **demo** on OpenShift (or loca
 - Build contexts for these images: **`poc/csv`** (see `../../openshift/BuildConfig-s3-csv-uploader.yaml` and `BuildConfig-s3-csv-producer.yaml`).
 - Example deployments: `../../openshift/s3-csv-uploader-kafka-demo.yaml` and `s3-csv-producer-kafka-demo.yaml` in namespace `kafka-demo`.
 - IAM / Secret setup: `../../aws/SETUP-iam-manual.md`.
-
-## Local compose (optional)
-
-From the repository root, `docker compose --profile s3 up --build` can run a similar path against **LocalStack** S3 + Redpanda, using the same scripts under this folder.
 
 For the **full** project (Modbus, root README, license), see [`../../README.md`](../../README.md).
