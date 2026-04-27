@@ -38,7 +38,9 @@ For a fully event-driven pipeline on AWS (object created → process exactly onc
 |------|---------|
 | `poc/` | Python producers, Dockerfiles, sample CSV |
 | `poc/s3_csv_producer.py` | S3 object → Kafka (multi-topic) |
-| `poc/s3_csv_uploader.py` | Random CSV in memory → `put_object` (mimics manual upload) |
+| `poc/s3_csv_uploader.py` | Fleet-style CSV in memory → S3 `put_object` (runs in OpenShift; `CSV_MODE=fleet` default) |
+| `poc/fleet_telemetry_data.py` | Embedded telematics rows + `build_fleet_csv_bytes()` |
+| `openshift/BuildConfig-s3-csv-uploader.yaml` | OpenShift build from Git → image `s3-csv-uploader:latest` |
 | `docker-compose.yml` | Redpanda + Modbus sim + producers; profile `s3` adds LocalStack + S3 worker |
 | `openshift/` | Example manifests for cluster deploy (fill in broker URL and images) |
 
@@ -46,7 +48,7 @@ For a fully event-driven pipeline on AWS (object created → process exactly onc
 
 Do not commit API tokens or kubeconfigs. Set `KAFKA_BOOTSTRAP_SERVERS` (and TLS/SASL per your broker) on the producers; adjust `openshift/kafka-bridge-example.yaml` for your registry and Kafka endpoint.
 
-**Kafka demo on cluster:** for namespace `kafka-demo` with Strimzi `my-cluster` and S3 bucket `arn:aws:s3:::simon-kafka-csv-demo`, see `openshift/s3-csv-producer-kafka-demo.yaml` (S3 → Kafka) and `openshift/s3-csv-uploader-kafka-demo.yaml` (synthetic CSV upload on an interval). Use the same `S3_KEY` in both so each upload overwrites the object, the reader sees a new ETag, and rows are produced again. Build/push `Dockerfile.s3-csv` and `Dockerfile.s3-csv-uploader`, wire AWS credentials, then set images on the Deployments.
+**Kafka demo on cluster:** namespace `kafka-demo`, bucket `arn:aws:s3:::simon-kafka-csv-demo`. Apply `openshift/BuildConfig-s3-csv-uploader.yaml` and run `oc start-build s3-csv-uploader -n kafka-demo` so the **CSV uploader image is built on the cluster** (no laptop). Then apply `openshift/s3-csv-uploader-kafka-demo.yaml` (upload) and `openshift/s3-csv-producer-kafka-demo.yaml` (S3 → Kafka). Create `Secret` `aws-s3-csv-creds` as in `aws/SETUP-iam-manual.md`. Use the same `S3_KEY` in both; `BUMP_TIMESTAMPS=1` on the uploader changes file bytes each cycle so S3 ETags update and the reader re-processes.
 
 ## License
 

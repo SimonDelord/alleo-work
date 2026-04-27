@@ -4,7 +4,8 @@
 # Use the same S3_KEY as the s3-csv-producer worker so each upload overwrites
 # the object, ETag changes, and the Kafka forwarder re-processes the file.
 #
-# IAM: s3:PutObject (and s3:ListBucket optional) on that bucket. Prefer IRSA / Secret, not keys in Git.
+# IAM: s3:PutObject on object ARNs under the bucket. Credentials: Secret aws-s3-csv-creds (or IRSA).
+# Build the image on-cluster: oc apply -f openshift/BuildConfig-s3-csv-uploader.yaml && oc start-build s3-csv-uploader -n kafka-demo
 # Apply: oc apply -n kafka-demo -f s3-csv-uploader-kafka-demo.yaml
 ---
 apiVersion: v1
@@ -16,8 +17,11 @@ data:
   S3_BUCKET: "simon-kafka-csv-demo"
   S3_KEY: "uploads/sample.csv"
   AWS_DEFAULT_REGION: "us-east-1"
-  # Seconds between each full-file upload
+  # fleet = embedded telematics CSV; random = tiny dev schema (see s3_csv_uploader.py)
+  CSV_MODE: "fleet"
+  BUMP_TIMESTAMPS: "1"
   UPLOAD_INTERVAL_SEC: "45"
+  # Only for CSV_MODE=random
   CSV_ROW_COUNT: "5"
   AWS_ENDPOINT_URL: ""
 ---
@@ -41,7 +45,8 @@ spec:
       serviceAccountName: s3-csv-uploader
       containers:
         - name: s3-csv-uploader
-          image: quay.io/REPLACE_ORG/s3-csv-uploader:latest
+          # After in-cluster build: image-registry.openshift-image-registry.svc:5000/kafka-demo/s3-csv-uploader:latest
+          image: image-registry.openshift-image-registry.svc:5000/kafka-demo/s3-csv-uploader:latest
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

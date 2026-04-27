@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate a small random CSV in memory and upload to S3 on a fixed interval.
-Mimics manual "create file + upload" for end-to-end tests with the S3 → Kafka worker.
+Build a CSV in memory and upload to S3 on an interval (intended to run in OpenShift).
+Default: fleet-telemetry-style dataset (see fleet_telemetry_data.py). Set CSV_MODE=random
+for a tiny throwaway schema for local testing.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 
+from fleet_telemetry_data import build_fleet_csv_bytes
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("s3_csv_uploader")
 
@@ -25,14 +28,16 @@ KEY = os.environ.get("S3_KEY", "uploads/sample.csv")
 REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 ENDPOINT = os.environ.get("AWS_ENDPOINT_URL", "").strip() or None
 INTERVAL = float(os.environ.get("UPLOAD_INTERVAL_SEC", "60"))
+CSV_MODE = os.environ.get("CSV_MODE", "fleet").strip().lower()
+BUMP_TIMESTAMPS = os.environ.get("BUMP_TIMESTAMPS", "1").strip().lower() in ("1", "true", "yes", "on")
 ROW_COUNT = int(os.environ.get("CSV_ROW_COUNT", "5"))
 SEED = os.environ.get("RANDOM_SEED", "").strip()
 COLUMNS = [c.strip() for c in os.environ.get("CSV_COLUMNS", "device_id,timestamp_c,metric,value").split(",") if c.strip()]
 
 
-def build_csv(rows: int) -> bytes:
+def build_random_csv(rows: int) -> bytes:
     buf = io.StringIO()
-    w = csv.writer(buf)
+    w = csv.writer(buf, lineterminator="\n")
     w.writerow(COLUMNS)
     now = datetime.now(timezone.utc)
     for _ in range(rows):
@@ -52,7 +57,7 @@ def build_csv(rows: int) -> bytes:
 def main() -> None:
     if not BUCKET:
         raise SystemExit("S3_BUCKET is required")
-    if SEED:
+    if SEED and CSV_MODE == "random":
         random.seed(int(SEED))
     client = boto3.client(
         "s3",
@@ -61,16 +66,33 @@ def main() -> None:
         config=Config(retries={"max_attempts": 5, "mode": "standard"}),
     )
     cycle = 0
+    LOG.info(
+        "starting uploader: mode=%s bucket=%s key=%s interval_s=%s bump_timestamps=%s",
+        CSV_MODE,
+        BUCKET,
+        KEY,
+        INTERVAL,
+        BUMP_TIMESTAMPS,
+    )
     while True:
         cycle += 1
-        body = build_csv(ROW_COUNT)
+        if CSV_MODE == "random":
+            body = build_random_csv(ROW_COUNT)
+        else:
+            body = build_fleet_csv_bytes(bump_timestamps=BUMP_TIMESTAMPS, upload_cycle=cycle)
         client.put_object(
             Bucket=BUCKET,
             Key=KEY,
             Body=body,
             ContentType="text/csv",
         )
-        LOG.info("uploaded s3://%s/%s (%s bytes, %s data rows) cycle=%s", BUCKET, KEY, len(body), ROW_COUNT, cycle)
+        LOG.info(
+            "uploaded s3://%s/%s (%s bytes) cycle=%s",
+            BUCKET,
+            KEY,
+            len(body),
+            cycle,
+        )
         time.sleep(INTERVAL)
 
 

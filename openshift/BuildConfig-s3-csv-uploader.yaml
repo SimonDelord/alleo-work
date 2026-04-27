@@ -1,0 +1,40 @@
+# In-cluster build: clone repo, build ./poc/Dockerfile.s3-csv-uploader, push to ImageStream s3-csv-uploader:latest
+#
+# Edit spec.source.git.uri if you use a fork. Then:
+#   oc apply -n kafka-demo -f BuildConfig-s3-csv-uploader.yaml
+#   oc start-build s3-csv-uploader -n kafka-demo --follow
+# Deploy: ensure Deployment s3-csv-uploader uses image image-registry.../kafka-demo/s3-csv-uploader:latest (default in s3-csv-uploader-kafka-demo.yaml)
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: s3-csv-uploader
+  namespace: kafka-demo
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: s3-csv-uploader
+  namespace: kafka-demo
+  labels:
+    app: s3-csv-uploader
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.s3-csv-uploader
+  output:
+    to:
+      kind: ImageStreamTag
+      name: s3-csv-uploader:latest
+  triggers:
+    - type: ConfigChange
