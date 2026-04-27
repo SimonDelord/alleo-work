@@ -1,5 +1,4 @@
-# kafka-python 2.0.x vendored six breaks on Python 3.12; 3.11 is stable
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 COPY requirements.txt .
