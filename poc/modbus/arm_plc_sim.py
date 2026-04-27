@@ -22,7 +22,7 @@ PORT = int(os.environ.get("MODBUS_PORT", "5020"))
 async def run() -> None:
     # HR0: 0=idle, 1=left, 2=right
     block = ModbusSequentialDataBlock(0, [0])
-    store = ModbusSlaveContext(hr=block)
+    store = ModbusSlaveContext(hr=block, zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     LOG.info(
         "Arm PLC Modbus TCP on %s:%s — HR0: 0=idle, 1=left, 2=right (external writes from kafka-to-arm)",

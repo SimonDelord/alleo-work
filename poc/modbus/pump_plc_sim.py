@@ -32,7 +32,8 @@ async def _toggle_pump(store: ModbusSlaveContext) -> None:
 async def run() -> None:
     # HR0: pump running (0/1)
     block = ModbusSequentialDataBlock(0, [0])
-    store = ModbusSlaveContext(hr=block)
+    # PDU address 0 must map to the block without the default +1 offset (see ModbusSlaveContext)
+    store = ModbusSlaveContext(hr=block, zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     asyncio.create_task(_toggle_pump(store))
     LOG.info("Pump PLC Modbus TCP on %s:%s — HR0 = pump (0=off, 1=on), toggle every %ss", HOST, PORT, PUMP_TOGGLE_SEC)
