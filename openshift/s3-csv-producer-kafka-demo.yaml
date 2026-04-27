@@ -1,0 +1,97 @@
+# S3 → Kafka CSV worker for namespace kafka-demo / Strimzi Kafka cluster my-cluster
+#
+# S3 bucket (reference): arn:aws:s3:::simon-kafka-csv-demo
+# Object key: set S3_KEY (e.g. uploads/measurements.csv) to match your upload path.
+# AWS: use IRSA/STS or mount keys via a Secret; do not put access keys in this file.
+#
+# Apply: oc apply -n kafka-demo -f s3-csv-producer-kafka-demo.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-csv-producer-env
+  namespace: kafka-demo
+data:
+  # In-cluster Strimzi listener "plain" (from my-cluster)
+  KAFKA_BOOTSTRAP_SERVERS: "my-cluster-kafka-bootstrap.kafka-demo.svc:9092"
+  S3_BUCKET: "simon-kafka-csv-demo"
+  # Set to the object key you will upload to (or override in Deployment env)
+  S3_KEY: "uploads/sample.csv"
+  KAFKA_TOPICS: "poc.csv.from_s3"
+  AWS_DEFAULT_REGION: "us-east-1"
+  PROCESS_MODE: "loop"
+  S3_POLL_INTERVAL_SEC: "30"
+  # Leave empty to use the real AWS S3 API in-cluster (pod needs AWS creds / IRSA)
+  AWS_ENDPOINT_URL: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3-csv-producer
+  namespace: kafka-demo
+  labels:
+    app: s3-csv-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: s3-csv-producer
+  template:
+    metadata:
+      labels:
+        app: s3-csv-producer
+    spec:
+      serviceAccountName: s3-csv-producer
+      containers:
+        - name: s3-csv-producer
+          # Build from ./poc (Dockerfile.s3-csv) and push to your registry, then:
+          #   oc -n kafka-demo set image deploy/s3-csv-producer s3-csv-producer=image-registry.openshift-image-registry.svc:5000/kafka-demo/s3-csv-producer:latest
+          image: quay.io/REPLACE_ORG/s3-csv-producer:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: s3-csv-producer-env
+          # Create Secret aws-s3-csv-creds first (see aws/SETUP-iam-manual.md)
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-csv-creds
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-csv-creds
+                  key: AWS_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+# Plain ServiceAccount; attach IAM (ROSA) or use a Secret for static keys
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: s3-csv-producer
+  namespace: kafka-demo
+  annotations: {}
+  # For ROSA + AWS: add pod identity or legacy AWS IAM role annotation when you have it, e.g.:
+  # eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT:role/ROLE"
+---
+# Optional: pre-create the topic to match your RF/MIR settings (3 brokers in my-pool)
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: poc-csv-s3
+  namespace: kafka-demo
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  topicName: poc.csv.from_s3
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2

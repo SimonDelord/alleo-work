@@ -1,0 +1,71 @@
+# Synthetic CSV generator + S3 upload for namespace kafka-demo
+#
+# Bucket: arn:aws:s3:::simon-kafka-csv-demo
+# Use the same S3_KEY as the s3-csv-producer worker so each upload overwrites
+# the object, ETag changes, and the Kafka forwarder re-processes the file.
+#
+# IAM: s3:PutObject (and s3:ListBucket optional) on that bucket. Prefer IRSA / Secret, not keys in Git.
+# Apply: oc apply -n kafka-demo -f s3-csv-uploader-kafka-demo.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-csv-uploader-env
+  namespace: kafka-demo
+data:
+  S3_BUCKET: "simon-kafka-csv-demo"
+  S3_KEY: "uploads/sample.csv"
+  AWS_DEFAULT_REGION: "us-east-1"
+  # Seconds between each full-file upload
+  UPLOAD_INTERVAL_SEC: "45"
+  CSV_ROW_COUNT: "5"
+  AWS_ENDPOINT_URL: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3-csv-uploader
+  namespace: kafka-demo
+  labels:
+    app: s3-csv-uploader
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: s3-csv-uploader
+  template:
+    metadata:
+      labels:
+        app: s3-csv-uploader
+    spec:
+      serviceAccountName: s3-csv-uploader
+      containers:
+        - name: s3-csv-uploader
+          image: quay.io/REPLACE_ORG/s3-csv-uploader:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: s3-csv-uploader-env
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-csv-creds
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-csv-creds
+                  key: AWS_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: s3-csv-uploader
+  namespace: kafka-demo

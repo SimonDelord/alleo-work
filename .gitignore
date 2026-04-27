@@ -9,3 +9,4 @@ venv/
 *.egg-info/
 .DS_Store
 .kube/
+openshift/secret-aws-s3-csv.local.yaml

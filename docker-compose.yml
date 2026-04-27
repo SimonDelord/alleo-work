@@ -56,3 +56,57 @@ services:
       MODBUS_PORT: "5020"
       MODBUS_UNIT_ID: "0"
       MODBUS_POLL_INTERVAL_SEC: "1"
+
+  # Optional: LocalStack S3 + worker (use: docker compose --profile s3 up --build)
+  localstack:
+    profiles: ["s3"]
+    image: localstack/localstack:3.7.2
+    environment:
+      SERVICES: s3
+      DEBUG: "0"
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 4s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  s3-seed:
+    profiles: ["s3"]
+    image: amazon/aws-cli:2.17.42
+    depends_on:
+      localstack:
+        condition: service_healthy
+    volumes:
+      - ./poc/sample.csv:/seed/sample.csv:ro
+    entrypoint: ["/bin/sh", "-exc"]
+    command:
+      - |
+        aws configure set default.region us-east-1
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://alleo-poc 2>/dev/null || true
+        aws --endpoint-url=http://localstack:4566 s3 cp /seed/sample.csv s3://alleo-poc/uploads/sample.csv
+
+  s3-csv-producer:
+    profiles: ["s3"]
+    build:
+      context: ./poc
+      dockerfile: Dockerfile.s3-csv
+    depends_on:
+      redpanda:
+        condition: service_started
+      s3-seed:
+        condition: service_completed_successfully
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      S3_BUCKET: alleo-poc
+      S3_KEY: uploads/sample.csv
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      KAFKA_TOPICS: poc.csv.rows,poc.csv.from_s3
+      PROCESS_MODE: loop
+      S3_POLL_INTERVAL_SEC: "15"
+      CSV_ROW_SEND_DELAY_SEC: "0.05"
