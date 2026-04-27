@@ -1,0 +1,139 @@
+# In-cluster builds for the Modbus pipeline (namespace modbus). Adjust git.uri to your fork.
+# After apply: oc start-build <name> -n modbus --wait
+# Images: image-registry.openshift-image-registry.svc:5000/modbus/<name>:latest
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: pump-plc
+  namespace: modbus
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: pump-plc
+  namespace: modbus
+  labels:
+    app: pump-plc
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/modbus
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.pump-plc
+  output:
+    to:
+      kind: ImageStreamTag
+      name: pump-plc:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: arm-plc
+  namespace: modbus
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: arm-plc
+  namespace: modbus
+  labels:
+    app: arm-plc
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/modbus
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.arm-plc
+  output:
+    to:
+      kind: ImageStreamTag
+      name: arm-plc:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: pump-to-kafka
+  namespace: modbus
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: pump-to-kafka
+  namespace: modbus
+  labels:
+    app: pump-to-kafka
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/modbus
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.pump-to-kafka
+  output:
+    to:
+      kind: ImageStreamTag
+      name: pump-to-kafka:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kafka-to-arm
+  namespace: modbus
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kafka-to-arm
+  namespace: modbus
+  labels:
+    app: kafka-to-arm
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/modbus
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.kafka-to-arm
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kafka-to-arm:latest
+  triggers:
+    - type: ConfigChange

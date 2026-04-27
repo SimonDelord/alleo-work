@@ -23,17 +23,24 @@ This folder is split into two **parts** you can treat as separate concerns (or f
 
 OpenShift build contexts for these images use **`contextDir: poc/csv`** (see `openshift/BuildConfig-*.yaml`).
 
-## `modbus/` — Modbus TCP → Kafka
+## `modbus/` — Modbus (pump + arm) ↔ Kafka
+
+**Pipeline (OpenShift `modbus` + Strimzi in `kafka-demo`):**
+
+1. **Pump “PLC”** — `pump_plc_sim.py` — HR0: pump off (0) / on (1); toggles on a timer.  
+2. **Pump → Kafka** — `pump_to_kafka.py` — reads HR0, publishes to `modbus.pipeline.pump.status`.  
+3. **Kafka → Arm** — `kafka_to_arm_modbus.py` — consumes `modbus.pipeline.arm.commands` (`{"action":"left"|"right"|"stop"}`), writes the **arm** PLC HR0 (0 idle, 1 left, 2 right).  
+4. **Arm “PLC”** — `arm_plc_sim.py` — serves that register for reads (and for Modbus writes from the bridge).
 
 | File | Purpose |
 |------|--------|
-| `modbus_producer.py` | Poll Modbus TCP holding registers, JSON payload to Kafka |
-| `modbus_sim.py` | Async Modbus TCP simulator (holding registers) for demos |
-| `Dockerfile.modbus` | Image for the poller |
-| `Dockerfile.modbus-sim` | Image for the simulator |
-| `requirements.txt` | `kafka-python` + `pymodbus` |
-
-OpenShift build context: **`poc/modbus`**.
+| `pump_plc_sim.py` / `arm_plc_sim.py` | Modbus TCP servers (pump and arm state in HR0) |
+| `pump_to_kafka.py` / `kafka_to_arm_modbus.py` | Modbus↔Kafka bridges (`kafka-python-ng` + `pymodbus`) |
+| `Dockerfile.pump-plc` / `Dockerfile.arm-plc` | PLC sims (`requirements-sim.txt`) |
+| `Dockerfile.pump-to-kafka` / `Dockerfile.kafka-to-arm` | Bridges (`requirements-bridge.txt`) |
+| `modbus_producer.py` | Generic Modbus poller → Kafka (flexible) |
+| `modbus_sim.py` / `Dockerfile.modbus*` / `requirements.txt` | Generic demo/legacy |
+| `openshift/modbus/` | Namespace, `KafkaTopic` manifests, `pipeline.yaml`, BuildConfigs (`contextDir: poc/modbus`) |
 
 ## Root `poc/README.md`
 

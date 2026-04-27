@@ -1,0 +1,186 @@
+# Modbus pump/arm demo in namespace `modbus`.
+# Flow: pump PLC (HR0) → pump-to-kafka → topic modbus.pipeline.pump.status
+#       topic modbus.pipeline.arm.commands → kafka-to-arm → arm PLC (HR0: 0 idle, 1 left, 2 right)
+# Requires: Strimzi `my-cluster` in kafka-demo, topics from kafka-topics-kafka-demo.yaml, images built.
+#
+#   oc apply -f openshift/modbus/namespace.yaml
+#   oc apply -f openshift/modbus/kafka-topics-kafka-demo.yaml   # in kafka-demo
+#   oc apply -f openshift/modbus/buildconfigs.yaml
+#   oc start-build pump-plc arm-plc pump-to-kafka kafka-to-arm -n modbus --wait
+#   oc apply -f openshift/modbus/pipeline.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: modbus-pipeline-env
+  namespace: modbus
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "my-cluster-kafka-bootstrap.kafka-demo.svc:9092"
+  KAFKA_TOPIC_PUMP: "modbus.pipeline.pump.status"
+  KAFKA_TOPIC_ARM_COMMANDS: "modbus.pipeline.arm.commands"
+  PUMP_MODBUS: "pump-plc:5020"
+  ARM_MODBUS: "arm-plc:5020"
+  KAFKA_CONSUMER_GROUP: "modbus-arm-writer"
+  POLL_SEC: "1.0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pump-plc
+  namespace: modbus
+  labels:
+    app: pump-plc
+spec:
+  selector:
+    app: pump-plc
+  ports:
+    - name: modbus
+      port: 5020
+      targetPort: 5020
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arm-plc
+  namespace: modbus
+  labels:
+    app: arm-plc
+spec:
+  selector:
+    app: arm-plc
+  ports:
+    - name: modbus
+      port: 5020
+      targetPort: 5020
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pump-plc
+  namespace: modbus
+  labels:
+    app: pump-plc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pump-plc
+  template:
+    metadata:
+      labels:
+        app: pump-plc
+    spec:
+      containers:
+        - name: pump-plc
+          image: image-registry.openshift-image-registry.svc:5000/modbus/pump-plc:latest
+          imagePullPolicy: Always
+          env:
+            - name: MODBUS_PORT
+              value: "5020"
+            - name: PUMP_TOGGLE_SEC
+              value: "20"
+          ports:
+            - containerPort: 5020
+              name: modbus
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arm-plc
+  namespace: modbus
+  labels:
+    app: arm-plc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arm-plc
+  template:
+    metadata:
+      labels:
+        app: arm-plc
+    spec:
+      containers:
+        - name: arm-plc
+          image: image-registry.openshift-image-registry.svc:5000/modbus/arm-plc:latest
+          imagePullPolicy: Always
+          env:
+            - name: MODBUS_PORT
+              value: "5020"
+          ports:
+            - containerPort: 5020
+              name: modbus
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pump-to-kafka
+  namespace: modbus
+  labels:
+    app: pump-to-kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pump-to-kafka
+  template:
+    metadata:
+      labels:
+        app: pump-to-kafka
+    spec:
+      containers:
+        - name: pump-to-kafka
+          image: image-registry.openshift-image-registry.svc:5000/modbus/pump-to-kafka:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: modbus-pipeline-env
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-to-arm
+  namespace: modbus
+  labels:
+    app: kafka-to-arm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-to-arm
+  template:
+    metadata:
+      labels:
+        app: kafka-to-arm
+    spec:
+      containers:
+        - name: kafka-to-arm
+          image: image-registry.openshift-image-registry.svc:5000/modbus/kafka-to-arm:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: modbus-pipeline-env
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

@@ -1,0 +1,8 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements-bridge.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY pump_to_kafka.py .
+CMD ["python", "pump_to_kafka.py"]

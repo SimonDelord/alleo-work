@@ -1,0 +1,32 @@
+# Strimzi topics for the Modbus pipeline. Apply in namespace kafka-demo (my-cluster).
+#   oc apply -n kafka-demo -f openshift/modbus/kafka-topics-kafka-demo.yaml
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: modbus-pipeline-pump-status
+  namespace: kafka-demo
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  topicName: modbus.pipeline.pump.status
+  partitions: 1
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: modbus-pipeline-arm-commands
+  namespace: kafka-demo
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  topicName: modbus.pipeline.arm.commands
+  partitions: 1
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
