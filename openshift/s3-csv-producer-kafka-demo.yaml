@@ -44,9 +44,7 @@ spec:
       serviceAccountName: s3-csv-producer
       containers:
         - name: s3-csv-producer
-          # Build from ./poc (Dockerfile.s3-csv) and push to your registry, then:
-          #   oc -n kafka-demo set image deploy/s3-csv-producer s3-csv-producer=image-registry.openshift-image-registry.svc:5000/kafka-demo/s3-csv-producer:latest
-          image: quay.io/REPLACE_ORG/s3-csv-producer:latest
+          image: image-registry.openshift-image-registry.svc:5000/kafka-demo/s3-csv-producer:latest
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
