@@ -4,6 +4,14 @@ This folder contains a small **OT-style** proof of concept: two **Modbus TCP “
 
 ## What the demo does
 
+The demo is really **two** small stories, both using Modbus as a stand-in for field equipment and Kafka as the shared bus. They are independent: you can think of the **pump** side and the **arm** side as separate use cases, even though we run them in the same namespace for convenience.
+
+- **Pump use case (read path / telemetry).** In a plant, a pump might be controlled over Modbus, and a register often holds a simple on/off (or run/stop) state. Operations or analytics may not speak Modbus; they need **event streams in Kafka** so you can build dashboards, alerts, or downstream processing. This demo has a **fake pump PLC** that only exposes that state over Modbus, and a **bridge** that **reads** that register and **publishes** changes to a Kafka topic. The pattern is: **OT device → read Modbus → produce to Kafka** (observe what the pump is doing from the event log).
+
+- **Arm use case (write path / commands).** A robotic arm (or any actuator) might also be driven from Modbus registers, but the **source of truth for “what should the arm do next”** may live in another system that already publishes to Kafka—an MES line schedule, a safety supervisor, a manual HMI, or a test script. This demo has a **fake arm PLC** that **accepts** arm position/ intent in a single holding register, and a **bridge** that **subscribes** to a command topic, turns each message into a Modbus **write**, and the PLC reflects the new value. The pattern is: **subscribe to Kafka → write Modbus** (command the field device from a stream). The optional **arm command producer** just injects test messages so the arm line moves without a separate Kafka client.
+
+**How the running demo wires that up (steps 1–5):**
+
 1. **Pump PLC** (`pump_plc_sim.py`) listens on Modbus TCP and exposes **holding register 0** as pump state: **0 = off**, **1 = on**. A background task toggles that bit on a timer (default 20s) so the line has moving data without manual writes.
 2. **Pump → Kafka** (`pump_to_kafka.py`) polls the pump over Modbus and publishes JSON to the topic **`modbus.pipeline.pump.status`** whenever the register value changes (e.g. `{"pump":"on","raw_hr0":1}`).
 3. **Arm PLC** (`arm_plc_sim.py`) listens on Modbus and exposes **holding register 0** for the arm: **0 = idle**, **1 = left**, **2 = right**.
