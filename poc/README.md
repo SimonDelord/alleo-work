@@ -25,6 +25,8 @@ OpenShift build contexts for these images use **`contextDir: poc/csv`** (see `op
 
 ## `modbus/` — Modbus (pump + arm) ↔ Kafka
 
+**Full narrative, file index, and OpenShift pointers:** **[`modbus/README.md`](modbus/README.md)**.
+
 **Pipeline (OpenShift `modbus` + Strimzi in `kafka-demo`):**
 
 1. **Pump “PLC”** — `pump_plc_sim.py` — HR0: pump off (0) / on (1); toggles on a timer.  

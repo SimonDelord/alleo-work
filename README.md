@@ -31,6 +31,7 @@ For a fully event-driven pipeline on AWS (object created → process exactly onc
 |------|---------|
 | [`poc/README.md`](poc/README.md) | **Index of `poc/csv` vs `poc/modbus` subfolders** |
 | [`poc/csv/README.md`](poc/csv/README.md) | **S3 uploader + S3 → Kafka demo (narrative)** |
+| [`poc/modbus/README.md`](poc/modbus/README.md) | **Modbus pump/arm + Kafka demo (narrative and file list)** |
 | `poc/csv/` | CSV + S3 → Kafka code and Dockerfiles |
 | `poc/modbus/` | Modbus TCP simulator + poller → Kafka |
 | `openshift/BuildConfig-s3-csv-*.yaml` | OpenShift builds (`contextDir: poc/csv`) |
