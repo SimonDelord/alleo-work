@@ -43,7 +43,7 @@ Do not commit API tokens or kubeconfigs. Set `KAFKA_BOOTSTRAP_SERVERS` (and TLS/
 
 **Kafka demo on cluster:** namespace `kafka-demo`, bucket `arn:aws:s3:::simon-kafka-csv-demo`. Apply `openshift/BuildConfig-s3-csv-uploader.yaml` and run `oc start-build s3-csv-uploader -n kafka-demo` so the **CSV uploader image is built on the cluster**. Then apply `openshift/s3-csv-uploader-kafka-demo.yaml` (upload) and `openshift/s3-csv-producer-kafka-demo.yaml` (S3 → Kafka). Create `Secret` `aws-s3-csv-creds` as in `aws/SETUP-iam-manual.md`. Use the same `S3_KEY` in both; `BUMP_TIMESTAMPS=1` on the uploader changes file bytes each cycle so S3 ETags update and the reader re-processes.
 
-**Modbus + Kafka (pump and arm simulators):** apply `openshift/modbus/namespace.yaml`, `openshift/modbus/kafka-topics-kafka-demo.yaml` in `kafka-demo`, `openshift/modbus/buildconfigs.yaml`, then `openshift/modbus/pipeline.yaml` in `modbus` after the four `BuildConfig` images are built. See `poc/README.md` and the comment header in `openshift/modbus/pipeline.yaml` for the apply order and topic names.
+**Modbus + Kafka (pump and arm simulators):** apply `openshift/modbus/namespace.yaml`, `openshift/modbus/kafka-topics-kafka-demo.yaml` in `kafka-demo`, `openshift/modbus/buildconfigs.yaml`, then `openshift/modbus/pipeline.yaml` in `modbus` after the `BuildConfig` images are built (including `arm-command-producer` for test traffic to the arm-commands topic). See `poc/README.md` and the comment header in `openshift/modbus/pipeline.yaml` for the apply order and topic names.
 
 ## License
 

@@ -137,3 +137,37 @@ spec:
       name: kafka-to-arm:latest
   triggers:
     - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: arm-command-producer
+  namespace: modbus
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: arm-command-producer
+  namespace: modbus
+  labels:
+    app: arm-command-producer
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/modbus
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.arm-command-producer
+  output:
+    to:
+      kind: ImageStreamTag
+      name: arm-command-producer:latest
+  triggers:
+    - type: ConfigChange

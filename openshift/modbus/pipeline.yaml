@@ -1,12 +1,13 @@
 # Modbus pump/arm demo in namespace `modbus`.
 # Flow: pump PLC (HR0) → pump-to-kafka → topic modbus.pipeline.pump.status
 #       topic modbus.pipeline.arm.commands → kafka-to-arm → arm PLC (HR0: 0 idle, 1 left, 2 right)
+#       (optional) arm-command-producer also publishes the same topic on an interval (demo traffic)
 # Requires: Strimzi `my-cluster` in kafka-demo, topics from kafka-topics-kafka-demo.yaml, images built.
 #
 #   oc apply -f openshift/modbus/namespace.yaml
 #   oc apply -f openshift/modbus/kafka-topics-kafka-demo.yaml   # in kafka-demo
 #   oc apply -f openshift/modbus/buildconfigs.yaml
-#   oc start-build pump-plc arm-plc pump-to-kafka kafka-to-arm -n modbus --wait
+#   oc start-build pump-plc arm-plc pump-to-kafka kafka-to-arm arm-command-producer -n modbus --wait
 #   oc apply -f openshift/modbus/pipeline.yaml
 ---
 apiVersion: v1
@@ -184,3 +185,39 @@ spec:
               memory: 128Mi
             limits:
               memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arm-command-producer
+  namespace: modbus
+  labels:
+    app: arm-command-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arm-command-producer
+  template:
+    metadata:
+      labels:
+        app: arm-command-producer
+    spec:
+      containers:
+        - name: arm-command-producer
+          image: image-registry.openshift-image-registry.svc:5000/modbus/arm-command-producer:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: modbus-pipeline-env
+          env:
+            - name: ARM_COMMAND_INTERVAL_SEC
+              value: "10"
+            - name: ARM_COMMAND_SEQUENCE
+              value: "left,right,stop"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

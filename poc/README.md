@@ -36,6 +36,7 @@ OpenShift build contexts for these images use **`contextDir: poc/csv`** (see `op
 |------|--------|
 | `pump_plc_sim.py` / `arm_plc_sim.py` | Modbus TCP servers (pump and arm state in HR0) |
 | `pump_to_kafka.py` / `kafka_to_arm_modbus.py` | Modbus↔Kafka bridges (`kafka-python-ng` + `pymodbus`) |
+| `arm_command_producer.py` / `Dockerfile.arm-command-producer` | Publishes `{"action":…}` to `modbus.pipeline.arm.commands` (default 10s; `requirements-kafka-producer.txt`) |
 | `Dockerfile.pump-plc` / `Dockerfile.arm-plc` | PLC sims (`requirements-sim.txt`) |
 | `Dockerfile.pump-to-kafka` / `Dockerfile.kafka-to-arm` | Bridges (`requirements-bridge.txt`) |
 | `modbus_producer.py` | Generic Modbus poller → Kafka (flexible) |
