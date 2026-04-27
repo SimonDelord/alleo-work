@@ -44,8 +44,9 @@ spec:
       serviceAccountName: s3-csv-producer
       containers:
         - name: s3-csv-producer
+          # Use :latest with Always so each rebuild is picked up (IfNotPresent can leave a stale :latest on the node)
           image: image-registry.openshift-image-registry.svc:5000/kafka-demo/s3-csv-producer:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: s3-csv-producer-env
