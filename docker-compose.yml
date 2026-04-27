@@ -22,7 +22,7 @@ services:
 
   modbus-sim:
     build:
-      context: ./poc
+      context: ./poc/modbus
       dockerfile: Dockerfile.modbus-sim
     environment:
       MODBUS_SIM_HOST: "0.0.0.0"
@@ -32,7 +32,7 @@ services:
 
   csv-producer:
     build:
-      context: ./poc
+      context: ./poc/csv
       dockerfile: Dockerfile.csv
     depends_on:
       - redpanda
@@ -44,7 +44,7 @@ services:
 
   modbus-producer:
     build:
-      context: ./poc
+      context: ./poc/modbus
       dockerfile: Dockerfile.modbus
     depends_on:
       - redpanda
@@ -80,7 +80,7 @@ services:
       localstack:
         condition: service_healthy
     volumes:
-      - ./poc/sample.csv:/seed/sample.csv:ro
+      - ./poc/csv/sample.csv:/seed/sample.csv:ro
     entrypoint: ["/bin/sh", "-exc"]
     command:
       - |
@@ -91,7 +91,7 @@ services:
   s3-csv-producer:
     profiles: ["s3"]
     build:
-      context: ./poc
+      context: ./poc/csv
       dockerfile: Dockerfile.s3-csv
     depends_on:
       redpanda:

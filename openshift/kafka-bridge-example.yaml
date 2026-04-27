@@ -1,5 +1,5 @@
 # Example only: point KAFKA_BOOTSTRAP_SERVERS at your cluster Kafka (Strimzi route,
-# AMQ Streams service, or managed Kafka). Build/push images from ./poc then set
+# AMQ Streams service, or managed Kafka). Build/push images from ./poc/csv and ./poc/modbus then set
 # image: to your registry path.
 ---
 apiVersion: v1

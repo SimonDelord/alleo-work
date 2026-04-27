@@ -22,7 +22,7 @@ docker compose exec redpanda rpk topic consume poc.csv.rows poc.modbus.readings 
 
 ## S3 → Kafka (CSV)
 
-Flow: you put a CSV object in **S3** (or any **S3-compatible** bucket, for example Ceph/RGW or MinIO). The worker **`poc/s3_csv_producer.py`** streams that object, parses rows with a header line, and publishes **each row as JSON** to **one or more** Kafka topics.
+Flow: you put a CSV object in **S3** (or any **S3-compatible** bucket, for example Ceph/RGW or MinIO). The worker **`poc/csv/s3_csv_producer.py`** streams that object, parses rows with a header line, and publishes **each row as JSON** to **one or more** Kafka topics.
 
 - **Topics:** set `KAFKA_TOPICS` to a comma-separated list (for example `ingest.raw,ingest.archive`). If unset, it uses `KAFKA_TOPIC_CSV` (default `poc.csv.rows`).
 - **Object location:** either `S3_URI=s3://bucket/path/file.csv` or `S3_BUCKET` + `S3_KEY`.
@@ -36,12 +36,11 @@ For a fully event-driven pipeline on AWS (object created → process exactly onc
 
 | Path | Purpose |
 |------|---------|
-| `poc/` | Python producers, Dockerfiles, sample CSV |
-| `poc/s3_csv_producer.py` | S3 object → Kafka (multi-topic) |
-| `poc/s3_csv_uploader.py` | Fleet-style CSV in memory → S3 `put_object` (runs in OpenShift; `CSV_MODE=fleet` default) |
-| `poc/fleet_telemetry_data.py` | Embedded telematics rows + `build_fleet_csv_bytes()` |
-| `openshift/BuildConfig-s3-csv-uploader.yaml` | OpenShift build from Git → image `s3-csv-uploader:latest` |
-| `docker-compose.yml` | Redpanda + Modbus sim + producers; profile `s3` adds LocalStack + S3 worker |
+| [`poc/README.md`](poc/README.md) | **Index of `poc/csv` vs `poc/modbus` subfolders** |
+| `poc/csv/` | CSV file + S3 → Kafka uploader/producer code and Dockerfiles |
+| `poc/modbus/` | Modbus TCP simulator + poller → Kafka |
+| `openshift/BuildConfig-s3-csv-*.yaml` | OpenShift builds (`contextDir: poc/csv`) |
+| `docker-compose.yml` | Redpanda + Modbus (`poc/modbus`) + CSV (`poc/csv`); profile `s3` adds LocalStack + S3 worker |
 | `openshift/` | Example manifests for cluster deploy (fill in broker URL and images) |
 
 ## OpenShift / ROSA

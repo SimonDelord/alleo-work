@@ -1,4 +1,0 @@
-# 2.0.2: ModuleNotFoundError: kafka.vendor.six.moves on Python 3.12+; fixed in 2.2+
-kafka-python==2.3.1
-pymodbus==3.6.8
-boto3==1.35.99

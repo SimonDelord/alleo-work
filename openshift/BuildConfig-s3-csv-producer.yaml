@@ -1,4 +1,4 @@
-# In-cluster build: Dockerfile.s3-csv → s3-csv-producer:latest
+# In-cluster build: poc/csv/Dockerfile.s3-csv → s3-csv-producer:latest
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
@@ -22,7 +22,7 @@ spec:
     git:
       uri: https://github.com/SimonDelord/alleo-work.git
       ref: main
-    contextDir: poc
+    contextDir: poc/csv
   strategy:
     type: Docker
     dockerStrategy:

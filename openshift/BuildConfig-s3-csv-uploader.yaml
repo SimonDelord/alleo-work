@@ -1,4 +1,4 @@
-# In-cluster build: clone repo, build ./poc/Dockerfile.s3-csv-uploader, push to ImageStream s3-csv-uploader:latest
+# In-cluster build: clone repo, build ./poc/csv/Dockerfile.s3-csv-uploader, push to ImageStream s3-csv-uploader:latest
 #
 # Edit spec.source.git.uri if you use a fork. Then:
 #   oc apply -n kafka-demo -f BuildConfig-s3-csv-uploader.yaml
@@ -27,7 +27,7 @@ spec:
     git:
       uri: https://github.com/SimonDelord/alleo-work.git
       ref: main
-    contextDir: poc
+    contextDir: poc/csv
   strategy:
     type: Docker
     dockerStrategy:
