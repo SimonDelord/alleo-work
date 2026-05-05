@@ -1,0 +1,105 @@
+# Build and load into your cluster (example):
+#   docker build -t quota-viewer:dev /Users/simondelord/Projects/alleo-work/k8s/quota-viewer
+#   kind load docker-image quota-viewer:dev   # or push to a registry and set image below
+#
+# Apply:
+#   kubectl apply -f k8s/quota-viewer/deploy.yaml
+#
+# Access:
+#   kubectl -n quota-demo port-forward svc/quota-viewer 8080:80
+#   open http://localhost:8080?namespace=quota-demo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quota-viewer
+  namespace: quota-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: quota-viewer
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: quota-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: quota-viewer
+subjects:
+  - kind: ServiceAccount
+    name: quota-viewer
+    namespace: quota-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quota-viewer
+  namespace: quota-demo
+  labels:
+    app: quota-viewer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quota-viewer
+  template:
+    metadata:
+      labels:
+        app: quota-viewer
+    spec:
+      serviceAccountName: quota-viewer
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: quota-viewer:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quota-viewer
+  namespace: quota-demo
+  labels:
+    app: quota-viewer
+spec:
+  selector:
+    app: quota-viewer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

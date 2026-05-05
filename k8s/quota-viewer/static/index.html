@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kubernetes quota viewer</title>
+    <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+    <style>
+      :root {
+        --bg: #0f1419;
+        --panel: #1a2332;
+        --border: #2d3a4f;
+        --text: #e8eef7;
+        --muted: #8b9cb3;
+        --ok: #3ecf8e;
+        --warn: #f5a524;
+        --bad: #f31260;
+        --accent: #6ea8fe;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        background: radial-gradient(1200px 600px at 20% -10%, #1e2a3f 0%, var(--bg) 55%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+      header {
+        padding: 28px 28px 12px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(26, 35, 50, 0.9), rgba(26, 35, 50, 0.35));
+        backdrop-filter: blur(8px);
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 1.35rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+      .sub {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        padding: 18px 28px;
+      }
+      label {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      select,
+      button {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 0.95rem;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      .meta {
+        margin-left: auto;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      main {
+        padding: 10px 28px 40px;
+        max-width: 1100px;
+      }
+      .empty {
+        padding: 28px;
+        border: 1px dashed var(--border);
+        border-radius: 14px;
+        color: var(--muted);
+      }
+      .card {
+        background: rgba(26, 35, 50, 0.72);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 18px 8px;
+        margin-bottom: 16px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      }
+      .card h2 {
+        margin: 0 0 14px;
+        font-size: 1.05rem;
+        font-weight: 650;
+      }
+      .row {
+        margin-bottom: 14px;
+      }
+      .rk {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+      }
+      .rk code {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 0.85rem;
+        color: #cfe0ff;
+      }
+      .vals {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .track {
+        height: 12px;
+        border-radius: 999px;
+        background: #121a26;
+        border: 1px solid rgba(45, 58, 79, 0.9);
+        overflow: hidden;
+      }
+      .fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        transition:
+          width 320ms ease,
+          background 320ms ease;
+      }
+      .fill.ok {
+        background: linear-gradient(90deg, rgba(62, 207, 142, 0.25), var(--ok));
+      }
+      .fill.warn {
+        background: linear-gradient(90deg, rgba(245, 165, 36, 0.25), var(--warn));
+      }
+      .fill.bad {
+        background: linear-gradient(90deg, rgba(243, 18, 96, 0.25), var(--bad));
+      }
+      .fill.unknown {
+        background: linear-gradient(90deg, rgba(110, 168, 254, 0.2), var(--accent));
+      }
+      .err {
+        margin: 12px 28px;
+        padding: 12px 14px;
+        border: 1px solid rgba(243, 18, 96, 0.45);
+        border-radius: 12px;
+        background: rgba(243, 18, 96, 0.08);
+        color: #ffb4cc;
+        font-size: 0.95rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Kubernetes quota viewer</h1>
+      <p class="sub">
+        Reads <code>ResourceQuota</code> objects via the Kubernetes API (same information as
+        <code>kubectl describe resourcequota</code>) and charts usage versus hard limits.
+      </p>
+    </header>
+
+    <div class="toolbar">
+      <div>
+        <label for="ns">Namespace</label><br />
+        <select id="ns"></select>
+      </div>
+      <div>
+        <label for="auto">&nbsp;</label><br />
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+      <div>
+        <label for="auto">Auto-refresh</label><br />
+        <select id="auto">
+          <option value="0" selected>Off</option>
+          <option value="2">2s</option>
+          <option value="5">5s</option>
+          <option value="10">10s</option>
+        </select>
+      </div>
+      <div class="meta" id="meta"></div>
+    </div>
+
+    <div id="banner"></div>
+
+    <main id="main"></main>
+
+    <script>
+      const nsEl = document.getElementById("ns");
+      const mainEl = document.getElementById("main");
+      const metaEl = document.getElementById("meta");
+      const bannerEl = document.getElementById("banner");
+      const autoEl = document.getElementById("auto");
+
+      let timer = null;
+
+      function setBanner(html) {
+        bannerEl.innerHTML = html || "";
+      }
+
+      function barWidth(pct) {
+        if (pct == null) return "0%";
+        return Math.min(pct, 100) + "%";
+      }
+
+      function render(data) {
+        if (data.error) {
+          setBanner(`<div class="err">${escapeHtml(data.error)}</div>`);
+          mainEl.innerHTML = "";
+          return;
+        }
+        setBanner("");
+        const quotas = data.quotas || [];
+        if (!quotas.length) {
+          mainEl.innerHTML =
+            '<div class="empty">No ResourceQuota objects in this namespace.</div>';
+          return;
+        }
+
+        mainEl.innerHTML = quotas
+          .map((q) => {
+            const rows = q.resources
+              .map((r) => {
+                const pct = r.percent;
+                const cls =
+                  pct == null ? "unknown" : r.level === "bad" ? "bad" : r.level === "warn" ? "warn" : "ok";
+                const pctLabel = pct == null ? "n/a" : pct + "%";
+                return `
+              <div class="row">
+                <div class="rk">
+                  <code>${escapeHtml(r.key)}</code>
+                  <span class="vals">${escapeHtml(r.display)} · ${escapeHtml(pctLabel)}</span>
+                </div>
+                <div class="track">
+                  <div class="fill ${cls}" style="width:${barWidth(pct)}"></div>
+                </div>
+              </div>`;
+              })
+              .join("");
+            return `
+          <section class="card">
+            <h2>${escapeHtml(q.name)}</h2>
+            ${rows}
+          </section>`;
+          })
+          .join("");
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      async function loadNamespaces() {
+        const res = await fetch("/api/namespaces");
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const wanted = new URLSearchParams(location.search).get("namespace");
+        const prev = nsEl.value;
+        nsEl.innerHTML = (data.namespaces || [])
+          .map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+          .join("");
+        const pick =
+          wanted ||
+          prev ||
+          (data.namespaces && data.namespaces.includes("quota-demo") ? "quota-demo" : null) ||
+          (data.namespaces && data.namespaces[0]) ||
+          "";
+        if (pick) nsEl.value = pick;
+      }
+
+      async function loadQuotas() {
+        const ns = nsEl.value;
+        const url = "/api/quotas?namespace=" + encodeURIComponent(ns);
+        const res = await fetch(url);
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(text || res.statusText);
+        }
+        if (!res.ok) throw new Error(data.detail || text || res.statusText);
+        render(data);
+        metaEl.textContent =
+          "Last updated: " +
+          new Date().toLocaleTimeString() +
+          " · namespace " +
+          (data.namespace || ns);
+      }
+
+      async function refreshAll() {
+        try {
+          await loadNamespaces();
+          await loadQuotas();
+        } catch (e) {
+          setBanner(`<div class="err">${escapeHtml(String(e))}</div>`);
+          metaEl.textContent = "";
+        }
+      }
+
+      function restartTimer() {
+        if (timer) clearInterval(timer);
+        timer = null;
+        const sec = Number(autoEl.value || "0");
+        if (sec > 0) timer = setInterval(() => loadQuotas(), sec * 1000);
+      }
+
+      document.getElementById("refresh").addEventListener("click", () => refreshAll());
+      nsEl.addEventListener("change", () => {
+        history.replaceState(null, "", "?namespace=" + encodeURIComponent(nsEl.value));
+        loadQuotas();
+      });
+      autoEl.addEventListener("change", restartTimer);
+
+      refreshAll();
+      restartTimer();
+    </script>
+  </body>
+</html>

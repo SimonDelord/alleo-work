@@ -1,0 +1,24 @@
+# Step 4 — no resources set: LimitRange applies defaultRequest (100m CPU, 128Mi memory).
+# Useful to show `kubectl describe pod` → Requests come from LimitRange.
+#
+# Apply alone after 01–03, or delete `demo-app` first so this Pod fits under demo-quota.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app-no-resources
+  namespace: quota-demo
+  labels:
+    app: demo-app-no-resources
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-app-no-resources
+  template:
+    metadata:
+      labels:
+        app: demo-app-no-resources
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9

@@ -1,0 +1,32 @@
+# Step 3 — exceeds demo-quota CPU requests: 3 replicas × 100m = 300m > 250m hard limit.
+# Apply AFTER 04-deployment-within-quota.yaml is Running, or apply this alone (replace 04).
+#
+# Expect some Pods to stay Pending and Events like:
+#   Forbidden: exceeded quota: demo-quota, requested: requests.cpu=100m, used: ...
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: quota-demo
+  labels:
+    app: demo-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

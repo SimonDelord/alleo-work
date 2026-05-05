@@ -1,0 +1,30 @@
+# Step 3 — fits under demo-quota: 2 replicas × 100m CPU request = 200m ≤ 250m.
+# Do not apply 06-pod-defaults-from-limitrange.yaml while this Deployment is at 2 replicas
+# (combined usage would exceed the quota); use 06 on a separate run or after deleting this app.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: quota-demo
+  labels:
+    app: demo-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

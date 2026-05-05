@@ -1,0 +1,22 @@
+# Step 4 — per-container defaults / min / max in this namespace.
+# Pods without resources get defaultRequest (counts toward ResourceQuota).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: demo-limit-range
+  namespace: quota-demo
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: "500m"
+        memory: 512Mi
+      min:
+        cpu: 50m
+        memory: 64Mi
+      default:
+        cpu: 200m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
