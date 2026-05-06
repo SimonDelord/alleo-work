@@ -221,6 +221,54 @@
         color: #ff7aa8;
         border: 1px solid rgba(243, 18, 96, 0.35);
       }
+      .event-scroll {
+        max-height: 420px;
+        overflow: auto;
+        margin-top: 8px;
+        border: 1px solid rgba(45, 58, 79, 0.85);
+        border-radius: 10px;
+        background: rgba(15, 20, 28, 0.55);
+      }
+      .event-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+      .event-table th,
+      .event-table td {
+        vertical-align: top;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(45, 58, 79, 0.55);
+      }
+      .event-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: rgba(26, 35, 50, 0.98);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .event-msg {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 0.8rem;
+        color: #f0d7de;
+        line-height: 1.35;
+      }
+      .ev-warn {
+        color: var(--warn);
+        font-weight: 700;
+      }
     </style>
   </head>
   <body>
@@ -382,6 +430,77 @@
           </section>`;
       }
 
+      function formatEventTime(iso) {
+        try {
+          const d = new Date(iso);
+          if (Number.isNaN(d.getTime())) return escapeHtml(String(iso || ""));
+          return escapeHtml(d.toLocaleString());
+        } catch {
+          return escapeHtml(String(iso || ""));
+        }
+      }
+
+      function renderQuotaEvents(evData) {
+        const evs = evData.events || [];
+        const err = evData.error;
+        if (err) {
+          mainEl.innerHTML += `<div class="err">${escapeHtml(err)}</div>`;
+          return;
+        }
+        if (!evs.length) {
+          mainEl.innerHTML += `<section class="card"><h2>Quota-related events</h2><div class="empty">No matching Events in this namespace (filter: quota / FailedCreate + forbidden).</div></section>`;
+          return;
+        }
+
+        const rows = evs
+          .map((ev) => {
+            const typ =
+              ev.event_type === "Warning"
+                ? `<span class="ev-warn">${escapeHtml(ev.event_type)}</span>`
+                : escapeHtml(ev.event_type || "");
+            const obj = escapeHtml(ev.object || `${ev.object_kind}/${ev.object_name}`);
+            const msg = escapeHtml(ev.message || "");
+            const occ =
+              ev.occurrences && Number(ev.occurrences) > 1
+                ? escapeHtml(String(ev.occurrences))
+                : "—";
+            return `<tr>
+          <td>${formatEventTime(ev.time)}</td>
+          <td>${typ}</td>
+          <td><code>${obj}</code></td>
+          <td>${escapeHtml(ev.reason || "")}</td>
+          <td>${occ}</td>
+        </tr>
+        <tr class="event-msg-row">
+          <td colspan="5"><div class="event-msg">${msg}</div></td>
+        </tr>`;
+          })
+          .join("");
+
+        mainEl.innerHTML += `
+          <section class="card">
+            <h2>Quota-related events</h2>
+            <p class="sub" style="margin: -6px 0 10px">
+              Same lines as <code>kubectl get events</code> / ReplicaSet warnings when Pod creation is rejected (for example
+              <strong>exceeded quota</strong>).
+            </p>
+            <div class="event-scroll">
+              <table class="event-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Type</th>
+                    <th>Involved object</th>
+                    <th>Reason</th>
+                    <th>#</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </section>`;
+      }
+
       function escapeHtml(s) {
         return String(s)
           .replaceAll("&", "&amp;")
@@ -413,11 +532,14 @@
         const ns = nsEl.value;
         const qUrl = "/api/quotas?namespace=" + encodeURIComponent(ns);
         const dUrl = "/api/deployments?namespace=" + encodeURIComponent(ns);
-        const [qRes, dRes] = await Promise.all([fetch(qUrl), fetch(dUrl)]);
+        const eUrl = "/api/quota-events?namespace=" + encodeURIComponent(ns);
+        const [qRes, dRes, eRes] = await Promise.all([fetch(qUrl), fetch(dUrl), fetch(eUrl)]);
         const qText = await qRes.text();
         const dText = await dRes.text();
+        const eText = await eRes.text();
         let qData;
         let dData;
+        let eData;
         try {
           qData = JSON.parse(qText);
         } catch {
@@ -428,10 +550,17 @@
         } catch {
           throw new Error(dText || dRes.statusText);
         }
+        try {
+          eData = JSON.parse(eText);
+        } catch {
+          throw new Error(eText || eRes.statusText);
+        }
         if (!qRes.ok) throw new Error(qData.detail || qText || qRes.statusText);
         if (!dRes.ok) throw new Error(dData.detail || dText || dRes.statusText);
+        if (!eRes.ok) throw new Error(eData.detail || eText || eRes.statusText);
         renderQuotas(qData);
         renderDeployments(dData);
+        renderQuotaEvents(eData);
         metaEl.textContent =
           "Last updated: " +
           new Date().toLocaleTimeString() +

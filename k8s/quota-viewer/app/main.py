@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
@@ -203,6 +204,95 @@ def list_deployments(namespace: str = Query(..., min_length=1)) -> dict[str, Any
     rows = [_deployment_row(d) for d in resp.items]
     rows.sort(key=lambda r: r["name"])
     return {"namespace": namespace, "deployments": rows, "error": None}
+
+
+def _is_quota_related_event(message: str, reason: str) -> bool:
+    """Match quota admission failures without pulling in unrelated events (e.g. namespace paths like quota-demo/)."""
+    m = (message or "").lower()
+    r = (reason or "").lower()
+    if "exceeded quota" in m:
+        return True
+    if "resourcequota" in m or "resource quota" in m:
+        return True
+    if r == "failedcreate" and "forbidden" in m and (
+        "quota" in m or "exceeded" in m or "limited:" in m
+    ):
+        return True
+    if "forbidden:" in m and "limited:" in m and ("requested:" in m or "requests." in m):
+        return True
+    return False
+
+
+def _event_timestamp(ev: Any) -> datetime:
+    et = getattr(ev, "event_time", None)
+    if et is not None:
+        if getattr(et, "tzinfo", None) is None:
+            return et.replace(tzinfo=timezone.utc)
+        return et
+    for attr in ("last_timestamp", "first_timestamp"):
+        t = getattr(ev, attr, None)
+        if t is not None:
+            if getattr(t, "tzinfo", None) is None:
+                return t.replace(tzinfo=timezone.utc)
+            return t
+    meta = ev.metadata
+    if meta and meta.creation_timestamp:
+        t = meta.creation_timestamp
+        if getattr(t, "tzinfo", None) is None:
+            return t.replace(tzinfo=timezone.utc)
+        return t
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _event_row(ev: Any) -> dict[str, Any]:
+    msg = ev.message or ""
+    io = ev.involved_object
+    kind = io.kind if io else ""
+    name = io.name if io else ""
+    series = getattr(ev, "series", None)
+    occurrences = int(series.count) if series and series.count is not None else 1
+    ts = _event_timestamp(ev)
+    return {
+        "time": ts.isoformat(),
+        "event_type": ev.type or "Normal",
+        "reason": ev.reason or "",
+        "object_kind": kind,
+        "object_name": name,
+        "object": f"{kind}/{name}".strip("/"),
+        "message": msg[:4000],
+        "occurrences": occurrences,
+    }
+
+
+@app.get("/api/quota-events")
+def list_quota_events(
+    namespace: str = Query(..., min_length=1),
+    limit: int = Query(60, ge=1, le=200),
+) -> dict[str, Any]:
+    """Namespace Events filtered to quota / FailedCreate forbidden messages (e.g. ReplicaSet failures)."""
+    _ensure_kube_config()
+    v1 = client.CoreV1Api()
+    try:
+        resp = v1.list_namespaced_event(namespace)
+    except ApiException as e:
+        if e.status == 404:
+            return {"namespace": namespace, "events": [], "error": "Namespace not found"}
+        raise HTTPException(
+            status_code=e.status or 500,
+            detail=_api_exception_detail(e),
+        ) from e
+
+    rows: list[dict[str, Any]] = []
+    for ev in resp.items:
+        msg = ev.message or ""
+        reason = ev.reason or ""
+        if not _is_quota_related_event(msg, reason):
+            continue
+        rows.append(_event_row(ev))
+
+    rows.sort(key=lambda r: r["time"], reverse=True)
+    rows = rows[:limit]
+    return {"namespace": namespace, "events": rows, "error": None}
 
 
 @app.get("/")
