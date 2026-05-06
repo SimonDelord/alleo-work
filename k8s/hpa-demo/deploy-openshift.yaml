@@ -1,0 +1,152 @@
+# OpenShift: binary-build the image, then apply this file.
+#
+#   oc new-project hpa-demo   # or: oc apply -f ... (Namespace included below)
+#   oc new-build --name=hpa-demo-app --strategy=docker --binary=true -n hpa-demo
+#   oc start-build hpa-demo-app --from-dir=. --follow -n hpa-demo
+#   oc apply -f deploy-openshift.yaml
+#   oc expose svc/hpa-demo-app -n hpa-demo
+#
+# Requires metrics-server / metrics adapter (enabled by default on ROSA/OSD).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hpa-demo
+  labels:
+    app.kubernetes.io/name: hpa-demo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hpa-demo-app
+  namespace: hpa-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hpa-demo-app
+  namespace: hpa-demo
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hpa-demo-app
+  namespace: hpa-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hpa-demo-app
+subjects:
+  - kind: ServiceAccount
+    name: hpa-demo-app
+    namespace: hpa-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hpa-demo-app
+  namespace: hpa-demo
+  labels:
+    app: hpa-demo-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hpa-demo-app
+  template:
+    metadata:
+      labels:
+        app: hpa-demo-app
+    spec:
+      serviceAccountName: hpa-demo-app
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: image-registry.openshift-image-registry.svc:5000/hpa-demo/hpa-demo-app:latest
+          imagePullPolicy: Always
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DEPLOYMENT_NAME
+              value: hpa-demo-app
+            - name: HPA_NAME
+              value: hpa-demo-app
+            - name: APP_LABEL
+              value: app=hpa-demo-app
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hpa-demo-app
+  namespace: hpa-demo
+  labels:
+    app: hpa-demo-app
+spec:
+  selector:
+    app: hpa-demo-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hpa-demo-app
+  namespace: hpa-demo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hpa-demo-app
+  minReplicas: 1
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 35

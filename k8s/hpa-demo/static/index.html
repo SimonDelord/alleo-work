@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HPA demo</title>
+    <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+    <style>
+      :root {
+        --bg: #0e141c;
+        --card: #161f2c;
+        --border: #2a3850;
+        --text: #e9f0ff;
+        --muted: #93a4bd;
+        --accent: #47cfff;
+        --good: #46d6a3;
+        --warn: #ffc14d;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        background: radial-gradient(900px 500px at 15% -20%, #1a2740 0%, var(--bg) 55%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+      header {
+        padding: 24px 26px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.35rem;
+      }
+      .sub {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        max-width: 900px;
+        line-height: 1.45;
+      }
+      main {
+        padding: 18px 26px 40px;
+        max-width: 1040px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      .tile {
+        background: rgba(22, 31, 44, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px 16px;
+      }
+      .tile .label {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .tile .value {
+        font-size: 1.65rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .tile .hint {
+        margin-top: 6px;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .panel {
+        background: rgba(22, 31, 44, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 1.05rem;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      button,
+      select {
+        background: var(--card);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 0.95rem;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: rgba(71, 207, 255, 0.55);
+        background: rgba(71, 207, 255, 0.12);
+      }
+      button.danger {
+        border-color: rgba(255, 107, 138, 0.55);
+        background: rgba(255, 107, 138, 0.08);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid rgba(42, 56, 80, 0.55);
+      }
+      th {
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      code {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 0.85rem;
+        color: #c9e4ff;
+      }
+      .meta {
+        margin-top: 10px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .err {
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 107, 138, 0.45);
+        background: rgba(255, 107, 138, 0.08);
+        color: #ffb7c6;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>HPA demo on OpenShift</h1>
+      <p class="sub">
+        This page polls the cluster for <strong>Deployment</strong> and <strong>Pod</strong> counts and shows
+        <strong>HPA</strong> targets when available. Use <strong>Generate CPU load</strong> to raise utilization so the
+        autoscaler adds replicas (may take ~30–90s after metrics stabilize).
+      </p>
+    </header>
+    <main>
+      <div id="err"></div>
+      <div class="grid">
+        <div class="tile">
+          <div class="label">Ready replicas</div>
+          <div class="value" id="ready">—</div>
+          <div class="hint">Deployment status.readyReplicas</div>
+        </div>
+        <div class="tile">
+          <div class="label">Pods (running objects)</div>
+          <div class="value" id="pcount">—</div>
+          <div class="hint">Listed by label selector</div>
+        </div>
+        <div class="tile">
+          <div class="label">HPA desired</div>
+          <div class="value" id="hpaDesired">—</div>
+          <div class="hint">status.desiredReplicas</div>
+        </div>
+        <div class="tile">
+          <div class="label">CPU target / current</div>
+          <div class="value" id="cpu">—</div>
+          <div class="hint">HPA averageUtilization</div>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Load generator</h2>
+        <p class="sub" style="margin-top: -6px">
+          Starts parallel requests to <code>/stress</code> on this same Route so each Pod that receives traffic burns CPU.
+          Stop when you have enough replicas for your demo.
+        </p>
+        <div class="controls">
+          <label class="sub">Intensity</label>
+          <select id="intensity">
+            <option value="6">Low (6 workers)</option>
+            <option value="18" selected>Medium (18 workers)</option>
+            <option value="36">High (36 workers)</option>
+          </select>
+          <label class="sub">Burst seconds</label>
+          <select id="burst">
+            <option value="1.5">1.5s</option>
+            <option value="2" selected>2s</option>
+            <option value="3">3s</option>
+          </select>
+          <button type="button" class="primary" id="startLoad">Start load</button>
+          <button type="button" class="danger" id="stopLoad" disabled>Stop</button>
+        </div>
+        <div class="meta" id="loadMeta">Idle</div>
+      </section>
+
+      <section class="panel">
+        <h2>Pods</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Phase</th>
+            </tr>
+          </thead>
+          <tbody id="podsBody"></tbody>
+        </table>
+        <div class="meta" id="meta"></div>
+      </section>
+    </main>
+    <script>
+      const errEl = document.getElementById("err");
+      const metaEl = document.getElementById("meta");
+      const podsBody = document.getElementById("podsBody");
+      let pollTimer = null;
+      let loadTimer = null;
+      let loadWorkers = [];
+
+      function setErr(msg) {
+        errEl.innerHTML = msg ? `<div class="err">${escapeHtml(msg)}</div>` : "";
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      async function refresh() {
+        const res = await fetch("/api/status");
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(text || res.statusText);
+        }
+        if (!res.ok) throw new Error(data.detail || text || res.statusText);
+
+        document.getElementById("ready").textContent = String(data.readyReplicas ?? "—");
+        document.getElementById("pcount").textContent = String(data.podCount ?? "—");
+
+        const hpa = data.hpa;
+        if (hpa) {
+          document.getElementById("hpaDesired").textContent =
+            hpa.desiredReplicas != null ? String(hpa.desiredReplicas) : "—";
+          const tgt = hpa.targetCpuPercent != null ? String(hpa.targetCpuPercent) : "—";
+          const cur = hpa.currentCpuPercent != null ? String(hpa.currentCpuPercent) : "—";
+          document.getElementById("cpu").textContent = tgt + "% / " + cur + "%";
+        } else {
+          document.getElementById("hpaDesired").textContent = "—";
+          document.getElementById("cpu").textContent = "—";
+        }
+
+        const pods = data.pods || [];
+        podsBody.innerHTML = pods
+          .map(
+            (p) =>
+              `<tr><td><code>${escapeHtml(p.name)}</code></td><td>${escapeHtml(p.phase)}</td></tr>`
+          )
+          .join("");
+        metaEl.textContent =
+          "Last refresh: " +
+          new Date().toLocaleTimeString() +
+          " · namespace " +
+          (data.namespace || "") +
+          " · deployment " +
+          (data.deployment || "");
+      }
+
+      function startPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(() => {
+          refresh().catch((e) => setErr(String(e)));
+        }, 2000);
+      }
+
+      async function burstOnce(workers, seconds) {
+        const qs = "?seconds=" + encodeURIComponent(seconds);
+        const tasks = [];
+        for (let i = 0; i < workers; i++) {
+          tasks.push(fetch("/stress" + qs, { cache: "no-store" }));
+        }
+        await Promise.allSettled(tasks);
+      }
+
+      document.getElementById("startLoad").addEventListener("click", async () => {
+        const workers = Number(document.getElementById("intensity").value || "18");
+        const seconds = Number(document.getElementById("burst").value || "2");
+        document.getElementById("stopLoad").disabled = false;
+        document.getElementById("startLoad").disabled = true;
+        document.getElementById("loadMeta").textContent =
+          "Running continuous bursts (" + workers + " parallel × " + seconds + "s). Stop when done.";
+        const loop = async () => {
+          try {
+            await burstOnce(workers, seconds);
+          } catch {
+            /* ignore */
+          }
+        };
+        loadTimer = window.setInterval(loop, 250);
+        await loop();
+      });
+
+      document.getElementById("stopLoad").addEventListener("click", () => {
+        if (loadTimer) clearInterval(loadTimer);
+        loadTimer = null;
+        document.getElementById("stopLoad").disabled = true;
+        document.getElementById("startLoad").disabled = false;
+        document.getElementById("loadMeta").textContent = "Idle";
+      });
+
+      refresh()
+        .then(() => {
+          setErr("");
+          startPolling();
+        })
+        .catch((e) => setErr(String(e)));
+    </script>
+  </body>
+</html>
