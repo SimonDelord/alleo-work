@@ -19,6 +19,17 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 _config_loaded = False
 
 
+def _api_exception_detail(exc: ApiException) -> str:
+    if exc.reason:
+        return exc.reason
+    if exc.body:
+        body = exc.body
+        if isinstance(body, bytes):
+            body = body.decode("utf-8", errors="replace")
+        return body[:800]
+    return str(exc)
+
+
 def _ensure_kube_config() -> None:
     global _config_loaded
     if _config_loaded:
@@ -127,7 +138,10 @@ def list_namespaces() -> dict[str, Any]:
     try:
         resp = v1.list_namespace()
     except ApiException as e:
-        raise HTTPException(status_code=e.status or 500, detail=e.reason or str(e)) from e
+        raise HTTPException(
+            status_code=e.status or 500,
+            detail=_api_exception_detail(e),
+        ) from e
     names = sorted(ns.metadata.name for ns in resp.items if ns.metadata and ns.metadata.name)
     return {"namespaces": names}
 
@@ -141,7 +155,10 @@ def list_quotas(namespace: str = Query(..., min_length=1)) -> dict[str, Any]:
     except ApiException as e:
         if e.status == 404:
             return {"namespace": namespace, "quotas": [], "error": "Namespace not found"}
-        raise HTTPException(status_code=e.status or 500, detail=e.reason or str(e)) from e
+        raise HTTPException(
+            status_code=e.status or 500,
+            detail=_api_exception_detail(e),
+        ) from e
 
     quotas = [_quota_to_payload(rq) for rq in resp.items]
     return {"namespace": namespace, "quotas": quotas, "error": None}
