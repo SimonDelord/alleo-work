@@ -1,0 +1,99 @@
+# Deploy quota-viewer UI in project `quota-viewer` (separate from quota-demo workload quota).
+# Build the image on-cluster first:
+#   oc project quota-viewer
+#   oc new-build --name=quota-viewer --strategy=docker --binary=true
+#   oc start-build quota-viewer --from-dir=. --follow
+#
+# Access:
+#   oc -n quota-viewer port-forward svc/quota-viewer 8080:80
+#   oc -n quota-viewer get route quota-viewer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quota-viewer
+  namespace: quota-viewer
+---
+# Binds the existing cluster-wide ClusterRole `quota-viewer` (list namespaces + resourcequotas)
+# to this namespace's ServiceAccount. Safe to apply alongside other bindings for other namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: quota-viewer-quota-viewer-ns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: quota-viewer
+subjects:
+  - kind: ServiceAccount
+    name: quota-viewer
+    namespace: quota-viewer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quota-viewer
+  namespace: quota-viewer
+  labels:
+    app: quota-viewer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quota-viewer
+  template:
+    metadata:
+      labels:
+        app: quota-viewer
+    spec:
+      serviceAccountName: quota-viewer
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: image-registry.openshift-image-registry.svc:5000/quota-viewer/quota-viewer:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quota-viewer
+  namespace: quota-viewer
+  labels:
+    app: quota-viewer
+spec:
+  selector:
+    app: quota-viewer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
