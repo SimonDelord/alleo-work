@@ -164,6 +164,47 @@ def list_quotas(namespace: str = Query(..., min_length=1)) -> dict[str, Any]:
     return {"namespace": namespace, "quotas": quotas, "error": None}
 
 
+def _deployment_row(dep: Any) -> dict[str, Any]:
+    spec_r = dep.spec.replicas
+    desired = int(spec_r) if spec_r is not None else 1
+    st = dep.status
+    ready = int(st.ready_replicas or 0) if st else 0
+    unavailable = int(st.unavailable_replicas or 0) if st else 0
+    shortfall = max(0, desired - ready)
+    level = "ok"
+    if shortfall > 0:
+        level = "warn"
+    if unavailable and shortfall > 0:
+        level = "bad"
+    return {
+        "name": dep.metadata.name if dep.metadata else "",
+        "desired": desired,
+        "ready": ready,
+        "unavailable": unavailable,
+        "shortfall": shortfall,
+        "level": level,
+    }
+
+
+@app.get("/api/deployments")
+def list_deployments(namespace: str = Query(..., min_length=1)) -> dict[str, Any]:
+    """Workload status: desired vs ready replicas (shows quota backlog when pods cannot be created)."""
+    _ensure_kube_config()
+    apps = client.AppsV1Api()
+    try:
+        resp = apps.list_namespaced_deployment(namespace)
+    except ApiException as e:
+        if e.status == 404:
+            return {"namespace": namespace, "deployments": [], "error": "Namespace not found"}
+        raise HTTPException(
+            status_code=e.status or 500,
+            detail=_api_exception_detail(e),
+        ) from e
+    rows = [_deployment_row(d) for d in resp.items]
+    rows.sort(key=lambda r: r["name"])
+    return {"namespace": namespace, "deployments": rows, "error": None}
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))

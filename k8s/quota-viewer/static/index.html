@@ -167,6 +167,60 @@
         color: #ffb4cc;
         font-size: 0.95rem;
       }
+      .hint {
+        margin: 0 28px 12px;
+        padding: 12px 14px;
+        border: 1px solid rgba(110, 168, 254, 0.35);
+        border-radius: 12px;
+        background: rgba(110, 168, 254, 0.08);
+        color: #d6e4ff;
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
+      .hint code {
+        font-size: 0.85em;
+      }
+      .dep-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        margin-top: 4px;
+      }
+      .dep-table th,
+      .dep-table td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid rgba(45, 58, 79, 0.6);
+      }
+      .dep-table th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      .pill.ok {
+        background: rgba(62, 207, 142, 0.15);
+        color: var(--ok);
+        border: 1px solid rgba(62, 207, 142, 0.35);
+      }
+      .pill.warn {
+        background: rgba(245, 165, 36, 0.12);
+        color: var(--warn);
+        border: 1px solid rgba(245, 165, 36, 0.35);
+      }
+      .pill.bad {
+        background: rgba(243, 18, 96, 0.1);
+        color: #ff7aa8;
+        border: 1px solid rgba(243, 18, 96, 0.35);
+      }
     </style>
   </head>
   <body>
@@ -175,6 +229,11 @@
       <p class="sub">
         Reads <code>ResourceQuota</code> objects via the Kubernetes API (same information as
         <code>kubectl describe resourcequota</code>) and charts usage versus hard limits.
+      </p>
+      <p class="sub" style="margin-top: 8px">
+        Quota <strong>used</strong> counts only <strong>admitted Pods</strong>. If scaling creates Pods that are
+        rejected by quota, those Pods never exist, so CPU/memory counters often <strong>do not move</strong>—watch
+        <strong>Deployments</strong> below for desired versus ready replicas.
       </p>
     </header>
 
@@ -190,9 +249,9 @@
       <div>
         <label for="auto">Auto-refresh</label><br />
         <select id="auto">
-          <option value="0" selected>Off</option>
+          <option value="0">Off</option>
           <option value="2">2s</option>
-          <option value="5">5s</option>
+          <option value="5" selected>5s</option>
           <option value="10">10s</option>
         </select>
       </div>
@@ -200,6 +259,11 @@
     </div>
 
     <div id="banner"></div>
+
+    <div class="hint" id="hint">
+      Tip: turn on <strong>Auto-refresh</strong> during demos. When quota blocks new Pods,
+      <code>limits.cpu</code> / <code>requests.cpu</code> may stay flat while <strong>desired replicas &gt; ready</strong>.
+    </div>
 
     <main id="main"></main>
 
@@ -221,7 +285,7 @@
         return Math.min(pct, 100) + "%";
       }
 
-      function render(data) {
+      function renderQuotas(data) {
         if (data.error) {
           setBanner(`<div class="err">${escapeHtml(data.error)}</div>`);
           mainEl.innerHTML = "";
@@ -229,21 +293,21 @@
         }
         setBanner("");
         const quotas = data.quotas || [];
-        if (!quotas.length) {
-          mainEl.innerHTML =
-            '<div class="empty">No ResourceQuota objects in this namespace.</div>';
-          return;
-        }
+        let html = "";
 
-        mainEl.innerHTML = quotas
-          .map((q) => {
-            const rows = q.resources
-              .map((r) => {
-                const pct = r.percent;
-                const cls =
-                  pct == null ? "unknown" : r.level === "bad" ? "bad" : r.level === "warn" ? "warn" : "ok";
-                const pctLabel = pct == null ? "n/a" : pct + "%";
-                return `
+        if (!quotas.length) {
+          html +=
+            '<div class="empty">No ResourceQuota objects in this namespace.</div>';
+        } else {
+          html += quotas
+            .map((q) => {
+              const rows = q.resources
+                .map((r) => {
+                  const pct = r.percent;
+                  const cls =
+                    pct == null ? "unknown" : r.level === "bad" ? "bad" : r.level === "warn" ? "warn" : "ok";
+                  const pctLabel = pct == null ? "n/a" : pct + "%";
+                  return `
               <div class="row">
                 <div class="rk">
                   <code>${escapeHtml(r.key)}</code>
@@ -253,15 +317,69 @@
                   <div class="fill ${cls}" style="width:${barWidth(pct)}"></div>
                 </div>
               </div>`;
-              })
-              .join("");
-            return `
+                })
+                .join("");
+              return `
           <section class="card">
             <h2>${escapeHtml(q.name)}</h2>
             ${rows}
           </section>`;
+            })
+            .join("");
+        }
+
+        mainEl.innerHTML = html;
+      }
+
+      function renderDeployments(depData) {
+        const deps = depData.deployments || [];
+        const err = depData.error;
+        if (err) {
+          mainEl.innerHTML += `<div class="err">${escapeHtml(err)}</div>`;
+          return;
+        }
+        if (!deps.length) {
+          mainEl.innerHTML += `<section class="card"><h2>Deployments</h2><div class="empty">No Deployments in this namespace.</div></section>`;
+          return;
+        }
+
+        const rows = deps
+          .map((d) => {
+            const pillClass = d.level === "bad" ? "bad" : d.level === "warn" ? "warn" : "ok";
+            const label =
+              d.shortfall > 0
+                ? `${d.shortfall} missing`
+                : "in sync";
+            return `<tr>
+          <td><code>${escapeHtml(d.name)}</code></td>
+          <td>${escapeHtml(String(d.desired))}</td>
+          <td>${escapeHtml(String(d.ready))}</td>
+          <td>${escapeHtml(String(d.unavailable))}</td>
+          <td><span class="pill ${pillClass}">${escapeHtml(label)}</span></td>
+        </tr>`;
           })
           .join("");
+
+        mainEl.innerHTML += `
+          <section class="card">
+            <h2>Deployments (desired vs ready)</h2>
+            <p class="sub" style="margin: -6px 0 10px">
+              When quota blocks Pod creation, <strong>desired</strong> can exceed <strong>ready</strong> while quota
+              <strong>used</strong> stays unchanged.
+            </p>
+            <table class="dep-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Desired</th>
+                  <th>Ready</th>
+                  <th>Unavailable</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </section>`;
       }
 
       function escapeHtml(s) {
@@ -291,30 +409,40 @@
         if (pick) nsEl.value = pick;
       }
 
-      async function loadQuotas() {
+      async function loadDashboard() {
         const ns = nsEl.value;
-        const url = "/api/quotas?namespace=" + encodeURIComponent(ns);
-        const res = await fetch(url);
-        const text = await res.text();
-        let data;
+        const qUrl = "/api/quotas?namespace=" + encodeURIComponent(ns);
+        const dUrl = "/api/deployments?namespace=" + encodeURIComponent(ns);
+        const [qRes, dRes] = await Promise.all([fetch(qUrl), fetch(dUrl)]);
+        const qText = await qRes.text();
+        const dText = await dRes.text();
+        let qData;
+        let dData;
         try {
-          data = JSON.parse(text);
+          qData = JSON.parse(qText);
         } catch {
-          throw new Error(text || res.statusText);
+          throw new Error(qText || qRes.statusText);
         }
-        if (!res.ok) throw new Error(data.detail || text || res.statusText);
-        render(data);
+        try {
+          dData = JSON.parse(dText);
+        } catch {
+          throw new Error(dText || dRes.statusText);
+        }
+        if (!qRes.ok) throw new Error(qData.detail || qText || qRes.statusText);
+        if (!dRes.ok) throw new Error(dData.detail || dText || dRes.statusText);
+        renderQuotas(qData);
+        renderDeployments(dData);
         metaEl.textContent =
           "Last updated: " +
           new Date().toLocaleTimeString() +
           " · namespace " +
-          (data.namespace || ns);
+          (qData.namespace || ns);
       }
 
       async function refreshAll() {
         try {
           await loadNamespaces();
-          await loadQuotas();
+          await loadDashboard();
         } catch (e) {
           setBanner(`<div class="err">${escapeHtml(String(e))}</div>`);
           metaEl.textContent = "";
@@ -325,13 +453,16 @@
         if (timer) clearInterval(timer);
         timer = null;
         const sec = Number(autoEl.value || "0");
-        if (sec > 0) timer = setInterval(() => loadQuotas(), sec * 1000);
+        if (sec > 0) timer = setInterval(() => loadDashboard(), sec * 1000);
       }
 
       document.getElementById("refresh").addEventListener("click", () => refreshAll());
       nsEl.addEventListener("change", () => {
         history.replaceState(null, "", "?namespace=" + encodeURIComponent(nsEl.value));
-        loadQuotas();
+        loadDashboard().catch((e) => {
+          setBanner(`<div class="err">${escapeHtml(String(e))}</div>`);
+          metaEl.textContent = "";
+        });
       });
       autoEl.addEventListener("change", restartTimer);
 
