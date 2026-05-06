@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from kubernetes import client, config
@@ -18,6 +20,13 @@ APP_LABEL = os.environ.get("APP_LABEL", "app=hpa-demo-app")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
 app = FastAPI(title="HPA Demo", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -73,8 +82,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/status")
-def api_status() -> dict[str, Any]:
+def _api_status_sync() -> dict[str, Any]:
     _ensure_kube()
     apps = client.AppsV1Api()
     v1 = client.CoreV1Api()
@@ -120,15 +128,23 @@ def api_status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/status")
+async def api_status() -> dict[str, Any]:
+    return await asyncio.to_thread(_api_status_sync)
+
+
 @app.get("/stress")
-def stress(
+async def stress(
     seconds: float = Query(2.0, ge=0.25, le=20.0, description="Busy-loop duration per request"),
 ) -> dict[str, Any]:
-    """Burn CPU so metrics-server sees utilization (shared across replicas via Route)."""
+    """Burn CPU for metrics-server; yields so /api/status polling keeps working on one worker."""
     deadline = time.monotonic() + seconds
     x = 0
     while time.monotonic() < deadline:
-        x = (x + 1) % 1000000007
+        slice_end = min(deadline, time.monotonic() + 0.02)
+        while time.monotonic() < slice_end:
+            x = (x + 1) % 1000000007
+        await asyncio.sleep(0)
     return {"ok": True, "seconds": seconds}
 
 

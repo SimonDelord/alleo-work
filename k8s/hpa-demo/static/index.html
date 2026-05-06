@@ -261,7 +261,7 @@
       }
 
       async function refresh() {
-        const res = await fetch("/api/status");
+        const res = await fetch("/api/status", { cache: "no-store", credentials: "same-origin" });
         const text = await res.text();
         let data;
         try {
@@ -349,7 +349,12 @@
           setErr("");
           startPolling();
         })
-        .catch((e) => setErr(String(e)));
+        .catch((e) =>
+          setErr(
+            String(e) +
+              " — Use the OpenShift Route URL (try https if http fails). If you were running CPU load, refresh: the app now yields so /api/status can respond during stress."
+          )
+        );
     </script>
   </body>
 </html>
