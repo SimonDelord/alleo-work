@@ -62,18 +62,16 @@ Haul trucks move material between the **loading area** and **crusher bays** (nor
 │  truck-TR1   │ ─ (telemetry) ────────►│ MQTT broker │ ─ (telemetry) ────────►│ mqtt-ingest │
 │  (Pod)       │◄─ (reroute, stop,      │  (in ns)    │                        │  service    │
 │              │    assign) ────────────│             │                        └──────┬──────┘
-├──────────────┤                        └──────┬──────┘
-│  truck-TR2   │ ─ (telemetry) ────────────────┘
-│  truck-TR3   │ ─ (telemetry) ────────────────┘
-└──────────────┘
-                                                                                    │ SQL
-                                                                                    ▼
+│  truck-TR2   │ ─ (telemetry) ────────►│             │                               │
+│  truck-TR3   │ ─ (telemetry) ────────►│             │                               │ SQL
+└──────────────┘                        └─────────────┘                               │
+                                                                                      ▼
                                                                              ┌─────────────┐
                                                                              │  PostgreSQL │
                                                                              │   (in ns)   │
                                                                              └─────────────┘
-                                                                                    │
-                                                                                    ▼
+                                                                                      │
+                                                                                      ▼
                                                                            Live map / Grafana
                                                                           (reads DB, not MQTT)
 ```
