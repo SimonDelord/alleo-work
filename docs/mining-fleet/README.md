@@ -58,27 +58,20 @@ Haul trucks move material between the **loading area** and **crusher bays** (nor
 ### Architecture (stand-alone)
 
 ```text
-┌──────────────┐     MQTT publish      ┌─────────────┐
-│  truck-TR1   │ ────────────────────► │ MQTT broker │
-│  (Pod)       │     telemetry         │ (in ns)     │
-├──────────────┤                       └──────┬──────┘
-│  truck-TR2   │                              │
-│  truck-TR3   │                              ▼
-└──────────────┘                       ┌─────────────┐
-       ▲                               │ mqtt-ingest │
-       │ MQTT subscribe                │  service    │
-       │ (reroute, stop, assign)       └──────┬──────┘
-       │                                      │ SQL
-       └──────────────────────────────────────┤
-                                              ▼
-                                       ┌─────────────┐
-                                       │ PostgreSQL  │
-                                       │ (in ns)     │
-                                       └──────┬──────┘
-                                              │
-                                              ▼
-                                       Live map / Grafana
-                                       (reads DB, not MQTT)
+┌──────────────┐     MQTT publish      ┌─────────────┐     subscribe       ┌─────────────┐
+│  truck-TR1   │ ────────────────────► │ MQTT broker │ ─ (telemetry) ────► │ mqtt-ingest │
+│  (Pod)       │     (telemetry)       │  (in ns)    │                     │  service    │
+├──────────────┤                       └──────┬──────┘                     └──────┬──────┘
+│  truck-TR2   │ ────────────────────►        │                                    │ SQL
+│  truck-TR3   │     (telemetry)                │ MQTT subscribe                         ▼
+└──────▲───────┘                                │ (reroute, stop, assign)         ┌─────────────┐
+       │                                        └──────────────────────────────► │ PostgreSQL  │
+       └────────────────────────────────────────────────────────────────────────│  (in ns)     │
+                                                                                 └──────┬──────┘
+                                                                                        │
+                                                                                        ▼
+                                                                                 Live map / Grafana
+                                                                                 (reads DB, not MQTT)
 ```
 
 ### Behaviour
