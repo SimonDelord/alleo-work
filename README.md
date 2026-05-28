@@ -25,10 +25,17 @@ Flow: a CSV object lives in **S3** (or any **S3-compatible** bucket). The worker
 
 For a fully event-driven pipeline on AWS (object created → process exactly once), the usual pattern is **S3 event notification → SQS** (or SNS → Lambda) carrying the bucket/key; this PoC uses **poll + ETag** so it stays simple and works the same on ROSA with an S3-compatible store.
 
+## Mining fleet architecture (three systems)
+
+For the **haul trucks**, **crushers**, and **water sprays** demo (closed namespaces, MQTT/Postgres, Modbus/historian/S3, Kafka integration plan), see:
+
+**[`docs/mining-fleet/README.md`](docs/mining-fleet/README.md)**
+
 ## Layout
 
 | Path | Purpose |
 |------|---------|
+| [`docs/mining-fleet/README.md`](docs/mining-fleet/README.md) | **Truck / crusher / spray ecosystems and Kafka integration overview** |
 | [`poc/README.md`](poc/README.md) | **Index of `poc/csv` vs `poc/modbus` subfolders** |
 | [`poc/csv/README.md`](poc/csv/README.md) | **S3 uploader + S3 → Kafka demo (narrative)** |
 | [`poc/modbus/README.md`](poc/modbus/README.md) | **Modbus pump/arm + Kafka demo (narrative and file list)** |
