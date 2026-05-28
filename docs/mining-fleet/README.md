@@ -154,18 +154,6 @@ Everything required to run trucks (broker, ingest, DB, truck deployments) lives 
 - The **historian** stores high-volume time-series **inside the namespace**. This mimics a site historian (AVEVA PI–style) without claiming a specific vendor product.
 - **`historian-export`** rolls up recent samples into a **CSV file** and uploads to **S3** on a schedule. This mimics batch reporting, compliance exports, and offline analysis — not sub-second fleet control.
 
-### Why S3 for crushers (and not for trucks)
-
-| Concern | Trucks | Crushers |
-|---------|--------|----------|
-| Latency | Low (live map) | Higher tolerance |
-| Integration style | Stream / DB | Batch file handoff |
-| Credibility | MQTT + SQL | Plant historian + CSV archive |
-
-### Relation to Metso / OEM narrative (high level)
-
-Real **crusher automation** (e.g. Metso IC™) integrates with **plant-level automation** (Modbus, OPC UA) and often with cloud **Metrics** for remote monitoring. This demo compresses that stack into **Modbus PLCs + in-cluster historian + S3 CSV**, which is appropriate for a PoC while staying honest in documentation.
-
 ### Namespace boundary
 
 Modbus and historian access stay inside **`crusher-fleet`**. Other systems learn crusher state via **S3 objects**, **Kafka events** (phase 2), or a thin **bridge** that copies latest fill % into truck-fleet Postgres for a unified map.
