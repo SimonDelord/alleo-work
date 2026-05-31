@@ -1,0 +1,119 @@
+# Two crusher PLC simulators — Modbus TCP on port 502.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crusher-1
+  namespace: crusher-fleet
+  labels:
+    app: crusher-plc
+    crusher-id: crusher-1
+spec:
+  selector:
+    app: crusher-plc
+    crusher-id: crusher-1
+  ports:
+    - name: modbus
+      port: 502
+      targetPort: 502
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crusher-1
+  namespace: crusher-fleet
+  labels:
+    app: crusher-plc
+    crusher-id: crusher-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crusher-plc
+      crusher-id: crusher-1
+  template:
+    metadata:
+      labels:
+        app: crusher-plc
+        crusher-id: crusher-1
+    spec:
+      containers:
+        - name: crusher-plc
+          image: image-registry.openshift-image-registry.svc:5000/crusher-fleet/crusher-plc:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 502
+              name: modbus
+          envFrom:
+            - configMapRef:
+                name: crusher-fleet-env
+          env:
+            - name: CRUSHER_ID
+              value: crusher-1
+            - name: INITIAL_FILL_PCT
+              value: "30"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crusher-2
+  namespace: crusher-fleet
+  labels:
+    app: crusher-plc
+    crusher-id: crusher-2
+spec:
+  selector:
+    app: crusher-plc
+    crusher-id: crusher-2
+  ports:
+    - name: modbus
+      port: 502
+      targetPort: 502
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crusher-2
+  namespace: crusher-fleet
+  labels:
+    app: crusher-plc
+    crusher-id: crusher-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crusher-plc
+      crusher-id: crusher-2
+  template:
+    metadata:
+      labels:
+        app: crusher-plc
+        crusher-id: crusher-2
+    spec:
+      containers:
+        - name: crusher-plc
+          image: image-registry.openshift-image-registry.svc:5000/crusher-fleet/crusher-plc:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 502
+              name: modbus
+          envFrom:
+            - configMapRef:
+                name: crusher-fleet-env
+          env:
+            - name: CRUSHER_ID
+              value: crusher-2
+            - name: INITIAL_FILL_PCT
+              value: "15"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

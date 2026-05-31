@@ -1,0 +1,36 @@
+# Plant historian — polls Modbus PLCs and writes PostgreSQL.
+# Apply after builds complete:
+#   oc apply -f openshift/crusher-fleet/06-historian.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: historian
+  namespace: crusher-fleet
+  labels:
+    app: historian
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: historian
+  template:
+    metadata:
+      labels:
+        app: historian
+    spec:
+      containers:
+        - name: historian
+          image: image-registry.openshift-image-registry.svc:5000/crusher-fleet/historian:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: crusher-fleet-env
+            - secretRef:
+                name: postgresql-credentials
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

@@ -1,0 +1,71 @@
+# In-cluster builds for crusher-fleet (namespace crusher-fleet). Adjust git.uri to your fork.
+# After apply: oc start-build crusher-plc historian -n crusher-fleet --wait
+# Images: image-registry.openshift-image-registry.svc:5000/crusher-fleet/<name>:latest
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: crusher-plc
+  namespace: crusher-fleet
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: crusher-plc
+  namespace: crusher-fleet
+  labels:
+    app: crusher-plc
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/crusher-fleet
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.crusher-plc
+  output:
+    to:
+      kind: ImageStreamTag
+      name: crusher-plc:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: historian
+  namespace: crusher-fleet
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: historian
+  namespace: crusher-fleet
+  labels:
+    app: historian
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/crusher-fleet
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.historian
+  output:
+    to:
+      kind: ImageStreamTag
+      name: historian:latest
+  triggers:
+    - type: ConfigChange
