@@ -15,7 +15,7 @@ spec:
   ports:
     - name: modbus
       port: 502
-      targetPort: 502
+      targetPort: 5020
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -42,7 +42,7 @@ spec:
           image: image-registry.openshift-image-registry.svc:5000/crusher-fleet/crusher-plc:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 502
+            - containerPort: 5020
               name: modbus
           envFrom:
             - configMapRef:
@@ -74,7 +74,7 @@ spec:
   ports:
     - name: modbus
       port: 502
-      targetPort: 502
+      targetPort: 5020
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -101,7 +101,7 @@ spec:
           image: image-registry.openshift-image-registry.svc:5000/crusher-fleet/crusher-plc:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 502
+            - containerPort: 5020
               name: modbus
           envFrom:
             - configMapRef:

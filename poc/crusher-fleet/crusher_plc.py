@@ -50,7 +50,7 @@ STATUS_NAMES = {
 
 CRUSHER_ID = os.environ.get("CRUSHER_ID", "crusher-1")
 HOST = os.environ.get("MODBUS_HOST", "0.0.0.0")
-PORT = int(os.environ.get("MODBUS_PORT", "502"))
+PORT = int(os.environ.get("MODBUS_PORT", "5020"))
 TICK_SEC = float(os.environ.get("TICK_SEC", "3.0"))
 CAPACITY_FILL_PCT = int(os.environ.get("CAPACITY_FILL_PCT", "90"))
 FILL_INCREASE_MIN = float(os.environ.get("FILL_INCREASE_MIN", "0.5"))
