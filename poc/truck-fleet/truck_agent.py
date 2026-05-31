@@ -4,7 +4,7 @@ Simulated haul truck: cycles loading → hauling → dumping → returning,
 publishing JSON telemetry to MQTT on each tick.
 
 Crusher destination is bootstrapped from DEFAULT_CRUSHER and updated at runtime
-via MQTT assignment messages.
+via MQTT new-destination messages.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 import paho.mqtt.client as mqtt
 
@@ -32,7 +31,7 @@ MQTT_HOST = os.environ.get("MQTT_HOST", "mqtt-broker")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 TICK_SEC = float(os.environ.get("TICK_SEC", "2.0"))
 TOPIC_PREFIX = os.environ.get("MQTT_TOPIC_PREFIX", "fleet/trucks")
-ASSIGNMENT_TOPIC = os.environ.get("MQTT_ASSIGNMENT_TOPIC", "fleet/crushers/assignments")
+NEW_DESTINATION_TOPIC = os.environ.get("MQTT_NEW_DESTINATION_TOPIC", "new-destination")
 DEFAULT_CRUSHER = os.environ.get("DEFAULT_CRUSHER", "crusher-1")
 VALID_CRUSHERS = frozenset(
     c.strip()
@@ -81,37 +80,53 @@ def _validate_crusher(crusher_id: str) -> bool:
     return False
 
 
-def _apply_assignment(sim: SimState, crusher_id: str, source: str) -> None:
-    if not _validate_crusher(crusher_id):
+def _apply_destination(sim: SimState, crusher_name: str, source: str) -> None:
+    if not _validate_crusher(crusher_name):
         return
     with sim._lock:
         previous = sim.destination_crusher
-        sim.destination_crusher = crusher_id
+        sim.destination_crusher = crusher_name
         sim.assignment_source = source
-    if previous != crusher_id:
+    if previous != crusher_name:
         LOG.info(
-            "Assignment updated: %s → %s (source=%s)",
+            "Destination updated: %s → %s (source=%s)",
             previous,
-            crusher_id,
+            crusher_name,
             source,
         )
 
 
-def _handle_assignment_message(sim: SimState, payload: dict) -> None:
-    truck_id = payload.get("truck_id")
-    if truck_id is not None and str(truck_id) != TRUCK_ID:
+def _crusher_from_topic(topic: str) -> str | None:
+    """Parse crusher name from new-destination/{truck_id}/{crusher_name}."""
+    prefix = f"{NEW_DESTINATION_TOPIC}/"
+    if not topic.startswith(prefix):
+        return None
+    parts = topic[len(prefix) :].split("/")
+    if len(parts) != 2 or parts[0] != TRUCK_ID:
+        return None
+    return parts[1]
+
+
+def _handle_new_destination(sim: SimState, topic: str, payload: dict | None) -> None:
+    crusher_name = _crusher_from_topic(topic)
+    source = "mqtt"
+
+    if payload:
+        payload_truck = payload.get("truck_id")
+        if payload_truck is not None and str(payload_truck) != TRUCK_ID:
+            return
+        source = str(payload.get("source", source))
+        crusher_name = (
+            payload.get("crusher_name")
+            or payload.get("crusher_id")
+            or crusher_name
+        )
+
+    if crusher_name is None:
+        LOG.warning("Could not parse crusher from topic %s", topic)
         return
 
-    crusher_id = payload.get("crusher_id")
-    if crusher_id is not None:
-        source = str(payload.get("source", "mqtt"))
-        _apply_assignment(sim, str(crusher_id), source)
-        return
-
-    assignments = payload.get("assignments")
-    if isinstance(assignments, dict) and TRUCK_ID in assignments:
-        source = str(payload.get("source", "mqtt"))
-        _apply_assignment(sim, str(assignments[TRUCK_ID]), source)
+    _apply_destination(sim, str(crusher_name), source)
 
 
 def _kmh_to_m_per_tick(speed_kmh: float, tick_sec: float) -> float:
@@ -221,7 +236,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _stop)
 
     sim = SimState(destination_crusher=DEFAULT_CRUSHER, assignment_source="bootstrap")
-    per_truck_topic = f"{TOPIC_PREFIX}/{TRUCK_ID}/assignment"
+    destination_subscribe = f"{NEW_DESTINATION_TOPIC}/{TRUCK_ID}/+"
     telemetry_topic = f"{TOPIC_PREFIX}/{TRUCK_ID}/telemetry"
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"truck-{TRUCK_ID}")
@@ -235,13 +250,8 @@ def main() -> None:
     ) -> None:
         del userdata, flags, properties
         if reason_code == 0:
-            client.subscribe(ASSIGNMENT_TOPIC, qos=1)
-            client.subscribe(per_truck_topic, qos=1)
-            LOG.info(
-                "Subscribed to %s and %s",
-                ASSIGNMENT_TOPIC,
-                per_truck_topic,
-            )
+            client.subscribe(destination_subscribe, qos=1)
+            LOG.info("Subscribed to %s", destination_subscribe)
         else:
             LOG.error("MQTT connect failed with code %s", reason_code)
 
@@ -251,12 +261,15 @@ def main() -> None:
         msg: mqtt.MQTTMessage,
     ) -> None:
         del client, userdata
-        try:
-            payload = json.loads(msg.payload.decode("utf-8"))
-            if isinstance(payload, dict):
-                _handle_assignment_message(sim, payload)
-        except json.JSONDecodeError:
-            LOG.warning("Invalid JSON on assignment topic %s", msg.topic)
+        payload: dict | None = None
+        if msg.payload:
+            try:
+                decoded = json.loads(msg.payload.decode("utf-8"))
+                if isinstance(decoded, dict):
+                    payload = decoded
+            except json.JSONDecodeError:
+                LOG.debug("Non-JSON payload on %s, using topic path only", msg.topic)
+        _handle_new_destination(sim, msg.topic, payload)
 
     client.on_connect = on_connect
     client.on_message = on_message

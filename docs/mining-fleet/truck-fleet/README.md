@@ -12,8 +12,8 @@ Parent overview: [../README.md](../README.md).
 ┌──────────────┐   fleet/trucks/TR*/telemetry      ┌─────────────┐
 │  truck-tr1   │ ─────────────────────────────────►│             │
 │  truck-tr2   │                                   │ mqtt-broker │
-│  truck-tr3   │ ◄── fleet/crushers/assignments    │  (Mosquitto)│
-└──────▲───────┘     fleet/trucks/{id}/assignment  │   :1883     │
+│  truck-tr3   │ ◄── new-destination/{id}/{crusher}│  (Mosquitto)│
+└──────▲───────┘                                   │   :1883     │
        │                                            └──────┬──────┘
        │ subscribe                                       │
 ┌──────┴───────────┐   publish (retained)               │ fleet/trucks/+/telemetry
@@ -34,11 +34,11 @@ Everything runs in namespace **`truck-fleet`**. External consumers should read *
 
 ## Crusher assignment (static bootstrap → dynamic runtime)
 
-Trucks no longer hardcode their destination crusher. Assignment is **MQTT-driven** so the truck-fleet and crusher-fleet namespaces stay decoupled.
+Each truck **starts with a specific crusher in mind** (`DEFAULT_CRUSHER` env) and **listens on MQTT** for destination updates. Assignment is **MQTT-driven** so the truck-fleet and crusher-fleet namespaces stay decoupled.
 
 ### Bootstrap (Phase 1)
 
-1. Each truck Pod sets **`DEFAULT_CRUSHER`** (env) as a fallback until the first MQTT assignment arrives.
+1. Each truck Pod sets **`DEFAULT_CRUSHER`** (env) as the initial destination until a retained `new-destination` message arrives.
 2. ConfigMap **`truck-crusher-assignments`** holds the initial mapping:
 
 ```yaml
@@ -48,11 +48,11 @@ assignments:
   TR3: crusher-1
 ```
 
-3. **`crusher-assignment`** reads that ConfigMap on startup, watches for edits, and publishes to MQTT (retained messages).
+3. **`crusher-assignment`** reads that ConfigMap on startup, watches for edits, and publishes to **`new-destination/{truck_id}/{crusher_name}`** (retained messages).
 
 ### Runtime (Phase 2 ready)
 
-The same MQTT topics can be published by a future controller in **`crusher-fleet`** when crushers report capacity, queue depth, or availability — no truck-agent changes required.
+The same **`new-destination/{truck_id}/{crusher_name}`** topics can be published by a future controller in **`crusher-fleet`** when crushers report capacity, queue depth, or availability — no truck-agent changes required.
 
 ```mermaid
 sequenceDiagram
@@ -62,9 +62,8 @@ sequenceDiagram
     participant TR as truck agent
 
     CM->>CA: ConfigMap watch (ADDED/MODIFIED)
-    CA->>MQTT: fleet/crushers/assignments (broadcast map)
-    CA->>MQTT: fleet/trucks/TR1/assignment (per-truck)
-    MQTT->>TR: retained assignment message
+    CA->>MQTT: new-destination/TR1/crusher-1 (retained)
+    MQTT->>TR: retained new-destination message
     TR->>TR: update destination_crusher
     TR->>MQTT: fleet/trucks/TR1/telemetry
 ```
@@ -82,7 +81,7 @@ Verify in truck logs or PostgreSQL:
 
 ```bash
 oc logs -n truck-fleet deploy/truck-tr1 --tail=5
-# Expect: Assignment updated: crusher-1 → crusher-2
+# Expect: Destination updated: crusher-1 → crusher-2
 
 oc port-forward -n truck-fleet svc/postgresql 5432:5432 &
 PGPASSWORD=truckfleet-demo psql -h localhost -U truckfleet -d truckfleet -c \
@@ -90,6 +89,13 @@ PGPASSWORD=truckfleet-demo psql -h localhost -U truckfleet -d truckfleet -c \
 ```
 
 Trucks mid-haul redirect toward the newly assigned crusher on the next simulation tick.
+
+Manual test publish:
+
+```bash
+mosquitto_pub -h mqtt-broker.truck-fleet.svc -t 'new-destination/TR1/crusher-2' \
+  -m '{"truck_id":"TR1","crusher_name":"crusher-2","source":"manual"}' -r
+```
 
 ---
 
@@ -121,29 +127,16 @@ Crushers are coordinate targets in telemetry only (`crusher-1`, `crusher-2`); cr
 | Topic | Publisher | Subscriber | Payload |
 |-------|-----------|------------|---------|
 | `fleet/trucks/{truck_id}/telemetry` | Truck agent | mqtt-ingest | JSON telemetry (see below) |
-| `fleet/crushers/assignments` | crusher-assignment (future: crusher-fleet) | All truck agents | Broadcast map (retained, QoS 1) |
-| `fleet/trucks/{truck_id}/assignment` | crusher-assignment (future: crusher-fleet) | Per-truck agent | Individual assignment (retained, QoS 1) |
+| `new-destination/{truck_id}/{crusher_name}` | crusher-assignment (future: crusher-fleet) | Per-truck agent (`new-destination/{TRUCK_ID}/+`) | JSON metadata (retained, QoS 1); crusher encoded in topic path |
 
-**Broadcast assignment** (`fleet/crushers/assignments`):
+Trucks subscribe to **`new-destination/{TRUCK_ID}/+`**. The crusher name is taken from the topic path; the JSON payload is optional metadata.
 
-```json
-{
-  "assignments": {
-    "TR1": "crusher-1",
-    "TR2": "crusher-2",
-    "TR3": "crusher-1"
-  },
-  "assigned_at": "2026-06-01T12:00:00+00:00",
-  "source": "crusher-fleet"
-}
-```
-
-**Per-truck assignment** (`fleet/trucks/TR1/assignment`):
+**New destination** (`new-destination/TR1/crusher-2`):
 
 ```json
 {
   "truck_id": "TR1",
-  "crusher_id": "crusher-2",
+  "crusher_name": "crusher-2",
   "assigned_at": "2026-06-01T12:00:00+00:00",
   "source": "crusher-fleet"
 }
@@ -281,8 +274,7 @@ Shared ConfigMap **`truck-fleet-env`**:
 | `MQTT_PORT` | `1883` | trucks, ingest |
 | `MQTT_TOPIC_PREFIX` | `fleet/trucks` | trucks |
 | `MQTT_TOPIC_SUBSCRIBE` | `fleet/trucks/+/telemetry` | ingest |
-| `MQTT_ASSIGNMENT_TOPIC` | `fleet/crushers/assignments` | trucks, crusher-assignment |
-| `MQTT_TRUCK_ASSIGNMENT_PREFIX` | `fleet/trucks` | crusher-assignment |
+| `MQTT_NEW_DESTINATION_TOPIC` | `new-destination` | trucks, crusher-assignment |
 | `ASSIGNMENTS_CONFIGMAP` | `truck-crusher-assignments` | crusher-assignment |
 | `ASSIGNMENT_SOURCE` | `crusher-fleet` | crusher-assignment |
 | `VALID_CRUSHERS` | `crusher-1,crusher-2` | trucks |
@@ -290,7 +282,7 @@ Shared ConfigMap **`truck-fleet-env`**:
 | `PGHOST` | `postgresql` | ingest |
 | `PGDATABASE` / `PGUSER` | `truckfleet` | ingest |
 
-Per-truck Deployment env: **`TRUCK_ID`**, **`DEFAULT_CRUSHER`** (bootstrap fallback until MQTT assignment arrives).
+Per-truck Deployment env: **`TRUCK_ID`**, **`DEFAULT_CRUSHER`** (bootstrap destination until first `new-destination` MQTT message).
 
 Secret **`postgresql-credentials`**: `PGPASSWORD`, `POSTGRES_*`.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Publishes truck→crusher assignments to MQTT from a Kubernetes ConfigMap.
+Publishes truck→crusher destinations to MQTT from a Kubernetes ConfigMap.
 
 Phase 1: bootstrap static allocation from ConfigMap truck-crusher-assignments.
 Phase 2: same service can run in crusher-fleet and publish based on capacity.
@@ -27,10 +27,7 @@ LOG = logging.getLogger("crusher_assignment")
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "mqtt-broker")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-ASSIGNMENT_TOPIC = os.environ.get("MQTT_ASSIGNMENT_TOPIC", "fleet/crushers/assignments")
-TRUCK_ASSIGNMENT_PREFIX = os.environ.get(
-    "MQTT_TRUCK_ASSIGNMENT_PREFIX", "fleet/trucks"
-)
+NEW_DESTINATION_TOPIC = os.environ.get("MQTT_NEW_DESTINATION_TOPIC", "new-destination")
 CONFIGMAP_NAME = os.environ.get("ASSIGNMENTS_CONFIGMAP", "truck-crusher-assignments")
 CONFIGMAP_KEY = os.environ.get("ASSIGNMENTS_CONFIGMAP_KEY", "assignments.yaml")
 NAMESPACE = os.environ.get("POD_NAMESPACE", "truck-fleet")
@@ -60,10 +57,10 @@ def _load_assignments_from_configmap(v1: client.CoreV1Api) -> dict[str, str]:
     return _parse_assignments(raw)
 
 
-class AssignmentPublisher:
+class DestinationPublisher:
     def __init__(self) -> None:
         self._running = True
-        self._last_payload: str | None = None
+        self._last_assignments: dict[str, str] | None = None
         self._mqtt = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2, client_id="crusher-assignment"
         )
@@ -81,42 +78,33 @@ class AssignmentPublisher:
                 LOG.warning("MQTT connect failed (%s), retrying in 5s", exc)
                 time.sleep(5)
 
-    def publish_assignments(self, assignments: dict[str, str]) -> None:
-        assigned_at = _now_iso()
-        broadcast: dict[str, Any] = {
-            "assignments": assignments,
-            "assigned_at": assigned_at,
-            "source": SOURCE,
-        }
-        payload = json.dumps(broadcast, separators=(",", ":"))
-        if payload == self._last_payload:
+    def publish_destinations(self, assignments: dict[str, str]) -> None:
+        if assignments == self._last_assignments:
             LOG.debug("Assignments unchanged, skipping publish")
             return
 
-        self._mqtt.publish(ASSIGNMENT_TOPIC, payload, qos=1, retain=True)
-        LOG.info(
-            "Published broadcast to %s: %s",
-            ASSIGNMENT_TOPIC,
-            ", ".join(f"{k}→{v}" for k, v in sorted(assignments.items())),
-        )
-
-        for truck_id, crusher_id in assignments.items():
-            individual = {
+        assigned_at = _now_iso()
+        for truck_id, crusher_name in sorted(assignments.items()):
+            topic = f"{NEW_DESTINATION_TOPIC}/{truck_id}/{crusher_name}"
+            payload: dict[str, Any] = {
                 "truck_id": truck_id,
-                "crusher_id": crusher_id,
+                "crusher_name": crusher_name,
                 "assigned_at": assigned_at,
                 "source": SOURCE,
             }
-            topic = f"{TRUCK_ASSIGNMENT_PREFIX}/{truck_id}/assignment"
             self._mqtt.publish(
                 topic,
-                json.dumps(individual, separators=(",", ":")),
+                json.dumps(payload, separators=(",", ":")),
                 qos=1,
                 retain=True,
             )
-            LOG.info("Published %s → %s on %s", truck_id, crusher_id, topic)
+            LOG.info("Published %s → %s on %s", truck_id, crusher_name, topic)
 
-        self._last_payload = payload
+        self._last_assignments = dict(assignments)
+        LOG.info(
+            "Published destinations: %s",
+            ", ".join(f"{k}→{v}" for k, v in sorted(assignments.items())),
+        )
 
     def run(self) -> None:
         try:
@@ -131,7 +119,7 @@ class AssignmentPublisher:
 
         try:
             assignments = _load_assignments_from_configmap(v1)
-            self.publish_assignments(assignments)
+            self.publish_destinations(assignments)
         except (ApiException, ValueError) as exc:
             LOG.error("Initial ConfigMap load failed: %s", exc)
             raise
@@ -161,7 +149,7 @@ class AssignmentPublisher:
                         continue
                     try:
                         assignments = _parse_assignments(raw)
-                        self.publish_assignments(assignments)
+                        self.publish_destinations(assignments)
                     except ValueError as exc:
                         LOG.error("Invalid assignments in ConfigMap: %s", exc)
             except ApiException as exc:
@@ -176,7 +164,7 @@ class AssignmentPublisher:
 
 
 def main() -> None:
-    publisher = AssignmentPublisher()
+    publisher = DestinationPublisher()
 
     def _stop(*_: object) -> None:
         publisher.stop()

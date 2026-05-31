@@ -1,4 +1,4 @@
-# Publishes truck→crusher assignments from ConfigMap to MQTT (retained messages).
+# Publishes truck→crusher destinations from ConfigMap to MQTT (retained messages).
 ---
 apiVersion: v1
 kind: ServiceAccount

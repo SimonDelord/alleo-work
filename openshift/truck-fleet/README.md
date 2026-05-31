@@ -7,7 +7,7 @@ MQTT-based haul truck demo: three simulated trucks publish telemetry; **mqtt-ing
 ```text
 ┌─────────────┐     fleet/trucks/TR*/telemetry     ┌─────────────┐
 │ truck-tr1   │ ─────────────────────────────────►│             │
-│ truck-tr2   │ ◄── fleet/crushers/assignments    │ mqtt-broker │
+│ truck-tr2   │ ◄── new-destination/{id}/{crusher}│ mqtt-broker │
 │ truck-tr3   │                                   │  :1883      │
 └─────────────┘                                   └──────┬──────┘
        ▲                                                  │ subscribe
