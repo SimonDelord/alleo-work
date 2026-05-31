@@ -245,6 +245,18 @@ so operators still have one screen while backends stay decoupled.
 
 ---
 
+## System design
+
+Per-system design documentation:
+
+| System | Namespace | Documentation |
+|--------|-----------|---------------|
+| Haul trucks | `truck-fleet` | [truck-fleet/README.md](truck-fleet/README.md) |
+| Crushers | `crusher-fleet` | [crusher-fleet/README.md](crusher-fleet/README.md) |
+| Water sprays | `water-spray-fleet` | [water-spray-fleet/README.md](water-spray-fleet/README.md) |
+
+---
+
 ## Repository map (this repo)
 
 These paths support the patterns above; the full fleet demo workloads may live in a separate application repository.
