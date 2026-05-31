@@ -1,0 +1,138 @@
+# In-cluster builds for fleet-integration.
+# After apply: oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-state-producer -n fleet-integration --wait
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kafka-truck-bridge
+  namespace: fleet-integration
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kafka-truck-bridge
+  namespace: fleet-integration
+  labels:
+    app: kafka-truck-bridge
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/fleet-integration
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.kafka-truck-bridge
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kafka-truck-bridge:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: destination-router
+  namespace: fleet-integration
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: destination-router
+  namespace: fleet-integration
+  labels:
+    app: destination-router
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/fleet-integration
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.destination-router
+  output:
+    to:
+      kind: ImageStreamTag
+      name: destination-router:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: mqtt-routing-bridge
+  namespace: fleet-integration
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: mqtt-routing-bridge
+  namespace: fleet-integration
+  labels:
+    app: mqtt-routing-bridge
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/fleet-integration
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.mqtt-routing-bridge
+  output:
+    to:
+      kind: ImageStreamTag
+      name: mqtt-routing-bridge:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: crusher-state-producer
+  namespace: fleet-integration
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: crusher-state-producer
+  namespace: fleet-integration
+  labels:
+    app: crusher-state-producer
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/fleet-integration
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.crusher-state-producer
+  output:
+    to:
+      kind: ImageStreamTag
+      name: crusher-state-producer:latest
+  triggers:
+    - type: ConfigChange

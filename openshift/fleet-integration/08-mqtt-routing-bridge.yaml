@@ -1,0 +1,35 @@
+# Kafka → MQTT bridge: publishes new-destination to truck-fleet broker.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt-routing-bridge
+  namespace: fleet-integration
+  labels:
+    app: mqtt-routing-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mqtt-routing-bridge
+  template:
+    metadata:
+      labels:
+        app: mqtt-routing-bridge
+    spec:
+      containers:
+        - name: mqtt-routing-bridge
+          image: image-registry.openshift-image-registry.svc:5000/fleet-integration/mqtt-routing-bridge:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: fleet-integration-env
+          env:
+            - name: KAFKA_CONSUMER_GROUP
+              value: mqtt-routing-bridge
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

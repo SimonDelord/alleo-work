@@ -1,0 +1,35 @@
+# Routing intelligence: consumes telemetry + crusher state, produces routing commands.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: destination-router
+  namespace: fleet-integration
+  labels:
+    app: destination-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: destination-router
+  template:
+    metadata:
+      labels:
+        app: destination-router
+    spec:
+      containers:
+        - name: destination-router
+          image: image-registry.openshift-image-registry.svc:5000/fleet-integration/destination-router:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: fleet-integration-env
+          env:
+            - name: KAFKA_CONSUMER_GROUP
+              value: destination-router
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

@@ -195,21 +195,23 @@ South spray follows the same pattern with south crusher / south zone events.
 Once each ecosystem runs stand-alone, deploy a **Kafka** cluster with **Red Hat AMQ Streams** (this repository already includes examples under `openshift/` and `poc/modbus/` for topic wiring). Integration uses **three complementary patterns**:
 
 ```text
-                    ┌──────────────── Kafka ────────────────┐
-                    │                                       │
-  truck-fleet       │   CDC ◄── Debezium / connect          │
-  PostgreSQL ───────┼──► fleet.trucks.*                     │
-                    │                                       │
-  crusher-fleet     │   Modbus collector ──► fleet.crushers.*│
-  (PLC + historian) │   S3 export (parallel, batch)         │
-        │           │        ▲                              │
-        │           │        │ S3 API / poller (optional)   │
-        └───────────┼────────┘ fleet.crushers.snapshots      │
-                    │                                       │
-  water-spray-fleet │   fleet.sprays.commands ──► Modbus    │
-  (north/south PLC) │   fleet.sprays.status ◄── Modbus poll │
-                    └───────────────────────────────────────┘
+truck-fleet (unchanged)          crusher-fleet (unchanged)        water-spray-fleet (unchanged)
+  MQTT telemetry                    Modbus/API → own store           Modbus → own store
+  mqtt-ingest → PostgreSQL          → Kafka (future)                 → Kafka (future)
+       ↓ CDC/ETL                          ↓
+       └──────────────→  fleet-integration / Kafka (AMQ Streams)  ←────────┘
+                              ↓
+                    destination-router
+                    consumes: fleet.trucks.telemetry, fleet.crushers.state
+                    produces: fleet.routing.commands
+                              ↓
+                    mqtt-routing-bridge
+                    consumes fleet.routing.commands → MQTT new-destination/{truck}/{crusher}
 ```
+
+**Routing intelligence lives in `fleet-integration`** — not inside truck-fleet or crusher-fleet. Crushers do **not** talk MQTT. Trucks bootstrap from `DEFAULT_CRUSHER` only; runtime rerouting comes from the orchestration layer.
+
+See **[fleet-integration/README.md](fleet-integration/README.md)** for topic contracts, deployment, and the Phase 1 demo path (`kafka-truck-bridge`, mock crusher state).
 
 ### Integration mechanisms
 
@@ -225,10 +227,11 @@ Use a single prefix for clarity, e.g. `fleet.*`:
 
 | Topic | Direction | Content |
 |-------|-----------|---------|
-| `fleet.trucks.telemetry` | Produce from mqtt-ingest | Position, payload, status |
+| `fleet.trucks.telemetry` | Produce from kafka-truck-bridge or CDC | Position, payload, status, destination |
 | `fleet.trucks.events` | Produce from trucks / ingest | `entered_zone`, `dump_started`, `rerouted`, … |
-| `fleet.crushers.state` | Produce from plant-collector | Periodic fill %, status |
+| `fleet.crushers.state` | Produce from plant-collector or demo producer | Periodic fill %, status, at_capacity |
 | `fleet.crushers.events` | Produce from plant-collector | `crusher_full`, `dump_received`, `fault`, … |
+| `fleet.routing.commands` | Produce from destination-router; consume by mqtt-routing-bridge | `{ truck_id, crusher_name, reason, decided_at }` |
 | `fleet.sprays.commands` | Consume by kafka-to-spray-modbus | `{ zone: north\|south, action: on\|off, reason }` |
 | `fleet.sprays.status` | Produce from Modbus poll | Spray on, pressure, fault |
 
@@ -252,6 +255,7 @@ Per-system design documentation:
 | System | Namespace | Documentation |
 |--------|-----------|---------------|
 | Haul trucks | `truck-fleet` | [truck-fleet/README.md](truck-fleet/README.md) |
+| Fleet integration (Kafka orchestration) | `fleet-integration` | [fleet-integration/README.md](fleet-integration/README.md) |
 | Crushers | `crusher-fleet` | [crusher-fleet/README.md](crusher-fleet/README.md) |
 | Water sprays | `water-spray-fleet` | [water-spray-fleet/README.md](water-spray-fleet/README.md) |
 
@@ -266,9 +270,9 @@ These paths support the patterns above; the full fleet demo workloads may live i
 | [`poc/modbus/README.md`](../../poc/modbus/README.md) | Modbus PLC sims; **Modbus → Kafka** and **Kafka → Modbus** bridges |
 | [`poc/csv/README.md`](../../poc/csv/README.md) | **S3 CSV upload** and **S3 → Kafka** (crusher export handoff pattern) |
 | [`poc/truck-fleet/README.md`](../../poc/truck-fleet/README.md) | MQTT truck agents + **mqtt-ingest → PostgreSQL** |
-| [`openshift/modbus/`](../../openshift/modbus/) | Example namespace, BuildConfigs, Kafka topics |
+| [`poc/fleet-integration/`](../../poc/fleet-integration/) | Kafka orchestration: destination-router, mqtt-routing-bridge, demo bridges |
 | [`openshift/truck-fleet/`](../../openshift/truck-fleet/) | Truck fleet namespace, Mosquitto, Postgres, BuildConfigs |
-| [`openshift/`](../../openshift/) | S3 CSV uploader/producer deployments, Kafka demo namespace |
+| [`openshift/fleet-integration/`](../../openshift/fleet-integration/) | Fleet integration namespace, Kafka topic manifests, Deployments |
 
 ---
 
@@ -276,9 +280,10 @@ These paths support the patterns above; the full fleet demo workloads may live i
 
 1. **Kafka** — AMQ Streams cluster, topics `fleet.*`.
 2. **`truck-fleet`** — Postgres, MQTT, mqtt-ingest, truck Pods; live map against Postgres.
-3. **`crusher-fleet`** — North/South PLC Pods, collector, historian, S3 export.
-4. **`water-spray-fleet`** — North/South spray PLC Pods; then Kafka → Modbus bridge + spray-controller.
-5. **Integration** — CDC from truck Postgres; crusher collector → Kafka; optional S3-triggered consumer; wire spray rules to truck + crusher events.
+3. **`fleet-integration`** — kafka-truck-bridge, destination-router, mqtt-routing-bridge; demo crusher state.
+4. **`crusher-fleet`** — North/South PLC Pods, collector, historian, S3 export.
+5. **`water-spray-fleet`** — North/South spray PLC Pods; then Kafka → Modbus bridge + spray-controller.
+6. **Integration** — Replace demo bridges with CDC from truck Postgres; crusher collector → Kafka; wire spray rules to truck + crusher events.
 
 ---
 
@@ -296,7 +301,7 @@ These paths support the patterns above; the full fleet demo workloads may live i
 
 ## Next documents
 
-- **Phase 2 runbook** — Red Hat AMQ Streams install, topic manifests, Debezium connector, S3 poller, Modbus bridge env vars (to be added).
-- **OpenShift manifests** — `openshift/truck-fleet/` (truck fleet); crusher and spray namespaces (to be added).
+- **Phase 2 runbook** — Red Hat AMQ Streams install, topic manifests (`openshift/fleet-integration/03-kafka-topics.yaml`), Debezium connector, S3 poller, Modbus bridge env vars (to be added).
+- **OpenShift manifests** — `openshift/truck-fleet/` (truck fleet); `openshift/fleet-integration/` (orchestration); crusher and spray namespaces (to be added).
 
 For questions or extensions (OPC UA gateway, Metrics-style cloud export), keep crushers on **Modbus + historian + S3** and trucks on **MQTT + Postgres**; use Kafka only for **coordination** and **spray control**, not as a replacement for the historian archive.

@@ -1,0 +1,43 @@
+# Phase 1 demo: publishes mock crusher state to fleet.crushers.state.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crusher-state-producer
+  namespace: fleet-integration
+  labels:
+    app: crusher-state-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crusher-state-producer
+  template:
+    metadata:
+      labels:
+        app: crusher-state-producer
+    spec:
+      containers:
+        - name: crusher-state-producer
+          image: image-registry.openshift-image-registry.svc:5000/fleet-integration/crusher-state-producer:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: fleet-integration-env
+          env:
+            - name: CRUSHER_STATE_FILE
+              value: /config/crushers.yaml
+          volumeMounts:
+            - name: crusher-state
+              mountPath: /config
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: crusher-state
+          configMap:
+            name: demo-crusher-state

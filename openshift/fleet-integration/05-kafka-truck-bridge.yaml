@@ -1,0 +1,35 @@
+# MQTT → Kafka bridge: mirrors truck telemetry without modifying truck-fleet.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-truck-bridge
+  namespace: fleet-integration
+  labels:
+    app: kafka-truck-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-truck-bridge
+  template:
+    metadata:
+      labels:
+        app: kafka-truck-bridge
+    spec:
+      containers:
+        - name: kafka-truck-bridge
+          image: image-registry.openshift-image-registry.svc:5000/fleet-integration/kafka-truck-bridge:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: fleet-integration-env
+          env:
+            - name: KAFKA_CONSUMER_GROUP
+              value: kafka-truck-bridge
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

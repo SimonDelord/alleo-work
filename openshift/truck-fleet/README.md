@@ -2,18 +2,20 @@
 
 MQTT-based haul truck demo: three simulated trucks publish telemetry; **mqtt-ingest** persists to PostgreSQL.
 
+Destination routing is handled by **`fleet-integration`** — see **`../../docs/mining-fleet/fleet-integration/README.md`**.
+
 ## Architecture
 
 ```text
 ┌─────────────┐     fleet/trucks/TR*/telemetry     ┌─────────────┐
 │ truck-tr1   │ ─────────────────────────────────►│             │
 │ truck-tr2   │ ◄── new-destination/{id}/{crusher}│ mqtt-broker │
-│ truck-tr3   │                                   │  :1883      │
+│ truck-tr3   │         (from fleet-integration)   │  :1883      │
 └─────────────┘                                   └──────┬──────┘
-       ▲                                                  │ subscribe
-┌──────┴──────────┐                                       ▼
-│crusher-assignment│◄── truck-crusher-assignments  ┌─────────────┐
-└─────────────────┘    (ConfigMap)                │ mqtt-ingest │
+                                                         │ subscribe
+                                                         ▼
+                                                  ┌─────────────┐
+                                                  │ mqtt-ingest │
                                                   └──────┬──────┘
                                                          │ SQL
                                                          ▼
@@ -30,24 +32,12 @@ oc apply -f openshift/truck-fleet/02-configmaps-secrets.yaml
 oc apply -f openshift/truck-fleet/03-mqtt-broker.yaml
 oc apply -f openshift/truck-fleet/04-postgresql.yaml
 oc apply -f openshift/truck-fleet/05-buildconfigs.yaml
-oc start-build truck-agent mqtt-ingest crusher-assignment -n truck-fleet --wait
+oc start-build truck-agent mqtt-ingest -n truck-fleet --wait
 oc apply -f openshift/truck-fleet/06-truck-agents.yaml
 oc apply -f openshift/truck-fleet/07-mqtt-ingest.yaml
-oc apply -f openshift/truck-fleet/08-crusher-assignment.yaml
 ```
 
-Or apply all numbered manifests except builds first, then build, then trucks + ingest:
-
-```bash
-oc apply -f openshift/truck-fleet/01-namespace.yaml \
-         -f openshift/truck-fleet/02-configmaps-secrets.yaml \
-         -f openshift/truck-fleet/03-mqtt-broker.yaml \
-         -f openshift/truck-fleet/04-postgresql.yaml
-oc apply -f openshift/truck-fleet/05-buildconfigs.yaml
-oc start-build truck-agent mqtt-ingest -n truck-fleet --wait
-oc apply -f openshift/truck-fleet/06-truck-agents.yaml \
-         -f openshift/truck-fleet/07-mqtt-ingest.yaml
-```
+Then deploy **`openshift/fleet-integration/`** for Kafka-based destination routing.
 
 **Note:** BuildConfigs pull from `https://github.com/SimonDelord/alleo-work.git` on `main`. Push this repo first, or edit `git.uri` in `05-buildconfigs.yaml` to your fork.
 
@@ -57,24 +47,6 @@ oc apply -f openshift/truck-fleet/06-truck-agents.yaml \
 oc get pods -n truck-fleet
 oc logs -n truck-fleet deploy/truck-tr1 --tail=5
 oc logs -n truck-fleet deploy/mqtt-ingest --tail=10
-```
-
-Query PostgreSQL (port-forward or `oc rsh`):
-
-```bash
-oc port-forward -n truck-fleet svc/postgresql 5432:5432
-PGPASSWORD=truckfleet-demo psql -h localhost -U truckfleet -d truckfleet -c \
-  "SELECT truck_id, state, load_pct, speed_kmh, destination_crusher, recorded_at
-   FROM truck_state ORDER BY truck_id;"
-```
-
-History sample:
-
-```sql
-SELECT truck_id, state, load_pct, position_x, position_y, recorded_at
-FROM truck_telemetry
-ORDER BY recorded_at DESC
-LIMIT 20;
 ```
 
 ## Files
@@ -88,6 +60,5 @@ LIMIT 20;
 | `05-buildconfigs.yaml` | ImageStreams + BuildConfigs for app images |
 | `06-truck-agents.yaml` | Deployments for TR1, TR2, TR3 |
 | `07-mqtt-ingest.yaml` | mqtt-ingest Deployment |
-| `08-crusher-assignment.yaml` | crusher-assignment Deployment + RBAC |
 
 Application source: **`../../poc/truck-fleet/`**. Design docs: **`../../docs/mining-fleet/truck-fleet/README.md`**.
