@@ -40,6 +40,8 @@ Compared to the original mining-fleet design (historian → S3 CSV export), this
 
 Each crusher PLC exposes **holding registers** starting at address 0 (Modbus function code 03). The historian reads six consecutive registers.
 
+**Port note:** Containers bind Modbus on **5020** (non-privileged). Kubernetes Services expose **502** → `targetPort` 5020 so clients inside the cluster connect to `crusher-1:502` as in field deployments.
+
 | HR | Name | Type | Range / values | Description |
 |----|------|------|----------------|-------------|
 | 0 | `fill_pct` | uint16 | 0–100 | Bin fill level percentage |
