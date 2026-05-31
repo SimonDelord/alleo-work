@@ -7,13 +7,13 @@ MQTT-based haul truck demo: three simulated trucks publish telemetry; **mqtt-ing
 ```text
 ┌─────────────┐     fleet/trucks/TR*/telemetry     ┌─────────────┐
 │ truck-tr1   │ ─────────────────────────────────►│             │
-│ truck-tr2   │ ─────────────────────────────────►│ mqtt-broker │
-│ truck-tr3   │ ─────────────────────────────────►│  :1883      │
+│ truck-tr2   │ ◄── fleet/crushers/assignments    │ mqtt-broker │
+│ truck-tr3   │                                   │  :1883      │
 └─────────────┘                                   └──────┬──────┘
-                                                         │ subscribe
-                                                         ▼
-                                                  ┌─────────────┐
-                                                  │ mqtt-ingest │
+       ▲                                                  │ subscribe
+┌──────┴──────────┐                                       ▼
+│crusher-assignment│◄── truck-crusher-assignments  ┌─────────────┐
+└─────────────────┘    (ConfigMap)                │ mqtt-ingest │
                                                   └──────┬──────┘
                                                          │ SQL
                                                          ▼
@@ -30,9 +30,10 @@ oc apply -f openshift/truck-fleet/02-configmaps-secrets.yaml
 oc apply -f openshift/truck-fleet/03-mqtt-broker.yaml
 oc apply -f openshift/truck-fleet/04-postgresql.yaml
 oc apply -f openshift/truck-fleet/05-buildconfigs.yaml
-oc start-build truck-agent mqtt-ingest -n truck-fleet --wait
+oc start-build truck-agent mqtt-ingest crusher-assignment -n truck-fleet --wait
 oc apply -f openshift/truck-fleet/06-truck-agents.yaml
 oc apply -f openshift/truck-fleet/07-mqtt-ingest.yaml
+oc apply -f openshift/truck-fleet/08-crusher-assignment.yaml
 ```
 
 Or apply all numbered manifests except builds first, then build, then trucks + ingest:
@@ -87,5 +88,6 @@ LIMIT 20;
 | `05-buildconfigs.yaml` | ImageStreams + BuildConfigs for app images |
 | `06-truck-agents.yaml` | Deployments for TR1, TR2, TR3 |
 | `07-mqtt-ingest.yaml` | mqtt-ingest Deployment |
+| `08-crusher-assignment.yaml` | crusher-assignment Deployment + RBAC |
 
 Application source: **`../../poc/truck-fleet/`**. Design docs: **`../../docs/mining-fleet/truck-fleet/README.md`**.

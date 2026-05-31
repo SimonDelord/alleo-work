@@ -9,28 +9,87 @@ Parent overview: [../README.md](../README.md).
 ## Architecture
 
 ```text
-┌──────────────┐   fleet/trucks/TR1/telemetry   ┌─────────────┐
-│  truck-tr1   │ ──────────────────────────────►│             │
-│  (Pod)       │                                │ mqtt-broker │
-├──────────────┤   fleet/trucks/TR2/telemetry   │  (Mosquitto)│
-│  truck-tr2   │ ──────────────────────────────►│   :1883     │
-├──────────────┤   fleet/trucks/TR3/telemetry   │             │
-│  truck-tr3   │ ──────────────────────────────►└──────┬──────┘
-└──────────────┘                                       │
-                                                       │ fleet/trucks/+/telemetry
-                                                       ▼
-                                                ┌─────────────┐
-                                                │ mqtt-ingest │
-                                                └──────┬──────┘
-                                                       │ INSERT + UPSERT
-                                                       ▼
-                                                ┌─────────────┐
-                                                │ PostgreSQL  │
-                                                │  (in ns)    │
-                                                └─────────────┘
+┌──────────────┐   fleet/trucks/TR*/telemetry      ┌─────────────┐
+│  truck-tr1   │ ─────────────────────────────────►│             │
+│  truck-tr2   │                                   │ mqtt-broker │
+│  truck-tr3   │ ◄── fleet/crushers/assignments    │  (Mosquitto)│
+└──────▲───────┘     fleet/trucks/{id}/assignment  │   :1883     │
+       │                                            └──────┬──────┘
+       │ subscribe                                       │
+┌──────┴───────────┐   publish (retained)               │ fleet/trucks/+/telemetry
+│ crusher-assignment│◄── watch ── truck-crusher-         ▼
+│  (Deployment)    │              assignments    ┌─────────────┐
+└──────────────────┘      (ConfigMap)            │ mqtt-ingest │
+                                                 └──────┬──────┘
+                                                        │ INSERT + UPSERT
+                                                        ▼
+                                                 ┌─────────────┐
+                                                 │ PostgreSQL  │
+                                                 └─────────────┘
 ```
 
 Everything runs in namespace **`truck-fleet`**. External consumers should read **PostgreSQL** (or a future HTTP/API gateway), not raw MQTT from outside the namespace.
+
+---
+
+## Crusher assignment (static bootstrap → dynamic runtime)
+
+Trucks no longer hardcode their destination crusher. Assignment is **MQTT-driven** so the truck-fleet and crusher-fleet namespaces stay decoupled.
+
+### Bootstrap (Phase 1)
+
+1. Each truck Pod sets **`DEFAULT_CRUSHER`** (env) as a fallback until the first MQTT assignment arrives.
+2. ConfigMap **`truck-crusher-assignments`** holds the initial mapping:
+
+```yaml
+assignments:
+  TR1: crusher-1
+  TR2: crusher-2
+  TR3: crusher-1
+```
+
+3. **`crusher-assignment`** reads that ConfigMap on startup, watches for edits, and publishes to MQTT (retained messages).
+
+### Runtime (Phase 2 ready)
+
+The same MQTT topics can be published by a future controller in **`crusher-fleet`** when crushers report capacity, queue depth, or availability — no truck-agent changes required.
+
+```mermaid
+sequenceDiagram
+    participant CM as truck-crusher-assignments
+    participant CA as crusher-assignment
+    participant MQTT as mqtt-broker
+    participant TR as truck agent
+
+    CM->>CA: ConfigMap watch (ADDED/MODIFIED)
+    CA->>MQTT: fleet/crushers/assignments (broadcast map)
+    CA->>MQTT: fleet/trucks/TR1/assignment (per-truck)
+    MQTT->>TR: retained assignment message
+    TR->>TR: update destination_crusher
+    TR->>MQTT: fleet/trucks/TR1/telemetry
+```
+
+### Change assignments at runtime
+
+Edit the ConfigMap; **`crusher-assignment`** republishes within seconds:
+
+```bash
+oc edit configmap truck-crusher-assignments -n truck-fleet
+# Change e.g. TR1: crusher-2, save and exit
+```
+
+Verify in truck logs or PostgreSQL:
+
+```bash
+oc logs -n truck-fleet deploy/truck-tr1 --tail=5
+# Expect: Assignment updated: crusher-1 → crusher-2
+
+oc port-forward -n truck-fleet svc/postgresql 5432:5432 &
+PGPASSWORD=truckfleet-demo psql -h localhost -U truckfleet -d truckfleet -c \
+  "SELECT truck_id, destination_crusher, recorded_at FROM truck_state ORDER BY truck_id;"
+```
+
+Trucks mid-haul redirect toward the newly assigned crusher on the next simulation tick.
 
 ---
 
@@ -45,10 +104,10 @@ Each truck agent (`poc/truck-fleet/truck_agent.py`) cycles through four states o
 | **dumping** | At crusher; `load_pct` decreases to 0 % |
 | **returning** | Travels back to loading area empty |
 
-Crusher assignments (static for demo):
+Crusher assignments are **dynamic via MQTT** (see [Crusher assignment](#crusher-assignment-static-bootstrap--dynamic-runtime)). Initial bootstrap mapping:
 
-| Truck | Destination |
-|-------|-------------|
+| Truck | Bootstrap (`DEFAULT_CRUSHER`) |
+|-------|-------------------------------|
 | TR1 | crusher-1 |
 | TR2 | crusher-2 |
 | TR3 | crusher-1 |
@@ -62,8 +121,35 @@ Crushers are coordinate targets in telemetry only (`crusher-1`, `crusher-2`); cr
 | Topic | Publisher | Subscriber | Payload |
 |-------|-----------|------------|---------|
 | `fleet/trucks/{truck_id}/telemetry` | Truck agent | mqtt-ingest | JSON telemetry (see below) |
+| `fleet/crushers/assignments` | crusher-assignment (future: crusher-fleet) | All truck agents | Broadcast map (retained, QoS 1) |
+| `fleet/trucks/{truck_id}/assignment` | crusher-assignment (future: crusher-fleet) | Per-truck agent | Individual assignment (retained, QoS 1) |
 
-Example payload:
+**Broadcast assignment** (`fleet/crushers/assignments`):
+
+```json
+{
+  "assignments": {
+    "TR1": "crusher-1",
+    "TR2": "crusher-2",
+    "TR3": "crusher-1"
+  },
+  "assigned_at": "2026-06-01T12:00:00+00:00",
+  "source": "crusher-fleet"
+}
+```
+
+**Per-truck assignment** (`fleet/trucks/TR1/assignment`):
+
+```json
+{
+  "truck_id": "TR1",
+  "crusher_id": "crusher-2",
+  "assigned_at": "2026-06-01T12:00:00+00:00",
+  "source": "crusher-fleet"
+}
+```
+
+Example telemetry payload:
 
 ```json
 {
@@ -77,6 +163,7 @@ Example payload:
   "speed_kmh": 35.0,
   "load_pct": 100.0,
   "destination_crusher": "crusher-1",
+  "assignment_source": "crusher-fleet",
   "timestamp": "2026-06-01T12:00:00+00:00"
 }
 ```
@@ -115,7 +202,7 @@ Same fields as telemetry (except `id`), keyed by `truck_id`. Updated via **UPSER
 
 | Path | Contents |
 |------|----------|
-| [`poc/truck-fleet/`](../../poc/truck-fleet/) | `truck_agent.py`, `mqtt_ingest.py`, Dockerfiles, `requirements.txt` |
+| [`poc/truck-fleet/`](../../poc/truck-fleet/) | `truck_agent.py`, `crusher_assignment.py`, `mqtt_ingest.py`, Dockerfiles, `requirements.txt` |
 | [`openshift/truck-fleet/`](../../openshift/truck-fleet/) | Numbered manifests: namespace, ConfigMaps/Secrets, broker, Postgres, BuildConfigs, Deployments |
 
 ---
@@ -136,9 +223,10 @@ oc apply -f openshift/truck-fleet/02-configmaps-secrets.yaml
 oc apply -f openshift/truck-fleet/03-mqtt-broker.yaml
 oc apply -f openshift/truck-fleet/04-postgresql.yaml
 oc apply -f openshift/truck-fleet/05-buildconfigs.yaml
-oc start-build truck-agent mqtt-ingest -n truck-fleet --wait
+oc start-build truck-agent mqtt-ingest crusher-assignment -n truck-fleet --wait
 oc apply -f openshift/truck-fleet/06-truck-agents.yaml
 oc apply -f openshift/truck-fleet/07-mqtt-ingest.yaml
+oc apply -f openshift/truck-fleet/08-crusher-assignment.yaml
 ```
 
 BuildConfigs clone **`poc/truck-fleet`** from GitHub (`SimonDelord/alleo-work`, branch `main`). **Push this repo before building**, or point `git.uri` in `05-buildconfigs.yaml` at your fork.
@@ -147,7 +235,7 @@ BuildConfigs clone **`poc/truck-fleet`** from GitHub (`SimonDelord/alleo-work`, 
 
 ```bash
 oc get pods -n truck-fleet
-# Expect: mqtt-broker, postgresql, mqtt-ingest, truck-tr1, truck-tr2, truck-tr3 — all Running
+# Expect: mqtt-broker, postgresql, mqtt-ingest, crusher-assignment, truck-tr1, truck-tr2, truck-tr3 — all Running
 ```
 
 ### Verify telemetry flow
@@ -193,11 +281,16 @@ Shared ConfigMap **`truck-fleet-env`**:
 | `MQTT_PORT` | `1883` | trucks, ingest |
 | `MQTT_TOPIC_PREFIX` | `fleet/trucks` | trucks |
 | `MQTT_TOPIC_SUBSCRIBE` | `fleet/trucks/+/telemetry` | ingest |
+| `MQTT_ASSIGNMENT_TOPIC` | `fleet/crushers/assignments` | trucks, crusher-assignment |
+| `MQTT_TRUCK_ASSIGNMENT_PREFIX` | `fleet/trucks` | crusher-assignment |
+| `ASSIGNMENTS_CONFIGMAP` | `truck-crusher-assignments` | crusher-assignment |
+| `ASSIGNMENT_SOURCE` | `crusher-fleet` | crusher-assignment |
+| `VALID_CRUSHERS` | `crusher-1,crusher-2` | trucks |
 | `TICK_SEC` | `2.0` | trucks |
 | `PGHOST` | `postgresql` | ingest |
 | `PGDATABASE` / `PGUSER` | `truckfleet` | ingest |
 
-Per-truck: **`TRUCK_ID`** (`TR1`, `TR2`, `TR3`) on each Deployment.
+Per-truck Deployment env: **`TRUCK_ID`**, **`DEFAULT_CRUSHER`** (bootstrap fallback until MQTT assignment arrives).
 
 Secret **`postgresql-credentials`**: `PGPASSWORD`, `POSTGRES_*`.
 

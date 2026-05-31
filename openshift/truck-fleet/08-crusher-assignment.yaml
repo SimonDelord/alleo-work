@@ -1,0 +1,69 @@
+# Publishes truck→crusher assignments from ConfigMap to MQTT (retained messages).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crusher-assignment
+  namespace: truck-fleet
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crusher-assignment-configmap-reader
+  namespace: truck-fleet
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["truck-crusher-assignments"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crusher-assignment-configmap-reader
+  namespace: truck-fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crusher-assignment-configmap-reader
+subjects:
+  - kind: ServiceAccount
+    name: crusher-assignment
+    namespace: truck-fleet
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crusher-assignment
+  namespace: truck-fleet
+  labels:
+    app: crusher-assignment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crusher-assignment
+  template:
+    metadata:
+      labels:
+        app: crusher-assignment
+    spec:
+      serviceAccountName: crusher-assignment
+      containers:
+        - name: crusher-assignment
+          image: image-registry.openshift-image-registry.svc:5000/truck-fleet/crusher-assignment:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: truck-fleet-env
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

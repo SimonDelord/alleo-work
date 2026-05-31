@@ -30,6 +30,8 @@ spec:
           env:
             - name: TRUCK_ID
               value: TR1
+            - name: DEFAULT_CRUSHER
+              value: crusher-1
           resources:
             requests:
               cpu: 25m
@@ -67,6 +69,8 @@ spec:
           env:
             - name: TRUCK_ID
               value: TR2
+            - name: DEFAULT_CRUSHER
+              value: crusher-2
           resources:
             requests:
               cpu: 25m
@@ -104,6 +108,8 @@ spec:
           env:
             - name: TRUCK_ID
               value: TR3
+            - name: DEFAULT_CRUSHER
+              value: crusher-1
           resources:
             requests:
               cpu: 25m

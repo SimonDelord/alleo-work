@@ -1,5 +1,5 @@
 # In-cluster builds for truck-fleet (namespace truck-fleet). Adjust git.uri to your fork.
-# After apply: oc start-build truck-agent mqtt-ingest -n truck-fleet --wait
+# After apply: oc start-build truck-agent mqtt-ingest crusher-assignment -n truck-fleet --wait
 # Images: image-registry.openshift-image-registry.svc:5000/truck-fleet/<name>:latest
 ---
 apiVersion: image.openshift.io/v1
@@ -33,6 +33,40 @@ spec:
     to:
       kind: ImageStreamTag
       name: truck-agent:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: crusher-assignment
+  namespace: truck-fleet
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: crusher-assignment
+  namespace: truck-fleet
+  labels:
+    app: crusher-assignment
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/truck-fleet
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.crusher-assignment
+  output:
+    to:
+      kind: ImageStreamTag
+      name: crusher-assignment:latest
   triggers:
     - type: ConfigChange
 ---
