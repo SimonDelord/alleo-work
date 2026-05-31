@@ -14,23 +14,11 @@ Each system can be developed, deployed, and demonstrated **on its own**. Integra
 
 ## At a glance
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Phase 1 — stand-alone ecosystems                     │
-├─────────────────┬─────────────────────────┬─────────────────────────────────┤
-│  truck-fleet    │  crusher-fleet          │  water-spray-fleet              │
-│  MQTT + Postgres│  Modbus + historian + S3│  Modbus PLCs (north / south)    │
-└────────┬────────┴────────────┬────────────┴──────────────┬──────────────────┘
-         │                     │                           │
-         │         Phase 2 — Kafka (AMQ Streams) integration │
-         └─────────────────────┼───────────────────────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │  Kafka cluster       │
-                    │  (e.g. kafka-demo)   │
-                    └──────────────────────┘
-         CDC (Postgres) │ S3 API / export │ Modbus bridges
-```
+The demo stacks three layers: **siloed operational telemetry** at the plant edge (each fleet in its own namespace), an **integration layer** built on **Apache Kafka** and connectors (**Red Hat AMQ Streams** on OpenShift), and **consumption** through tailored dashboards, cross-domain applications, and a data lake for advanced processing (ML, analytics).
+
+![Mining fleet architecture at a glance](at-a-glance.png)
+
+*Bottom — siloed operational telemetry:* Water Spray Fleet (Modbus/API), Crusher Fleet (Modbus/CSV/API), and Fleet System (API/MQTT/CDC). *Middle — integration layer:* Kafka and connectors (Debezium CDC, Modbus bridges, S3 pollers). *Top — consumption:* tailored dashboards, cross-domain apps, and data lake / advanced processing.
 
 | System | Namespace (planned) | Field protocol | In-namespace data store | Primary northbound handoff |
 |--------|---------------------|----------------|-------------------------|----------------------------|
