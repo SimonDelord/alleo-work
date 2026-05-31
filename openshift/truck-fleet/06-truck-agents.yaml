@@ -1,0 +1,112 @@
+# Three truck agents (TR1, TR2, TR3) — one Deployment each for distinct TRUCK_ID.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: truck-tr1
+  namespace: truck-fleet
+  labels:
+    app: truck-agent
+    truck-id: TR1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: truck-agent
+      truck-id: TR1
+  template:
+    metadata:
+      labels:
+        app: truck-agent
+        truck-id: TR1
+    spec:
+      containers:
+        - name: truck-agent
+          image: image-registry.openshift-image-registry.svc:5000/truck-fleet/truck-agent:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: truck-fleet-env
+          env:
+            - name: TRUCK_ID
+              value: TR1
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: truck-tr2
+  namespace: truck-fleet
+  labels:
+    app: truck-agent
+    truck-id: TR2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: truck-agent
+      truck-id: TR2
+  template:
+    metadata:
+      labels:
+        app: truck-agent
+        truck-id: TR2
+    spec:
+      containers:
+        - name: truck-agent
+          image: image-registry.openshift-image-registry.svc:5000/truck-fleet/truck-agent:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: truck-fleet-env
+          env:
+            - name: TRUCK_ID
+              value: TR2
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: truck-tr3
+  namespace: truck-fleet
+  labels:
+    app: truck-agent
+    truck-id: TR3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: truck-agent
+      truck-id: TR3
+  template:
+    metadata:
+      labels:
+        app: truck-agent
+        truck-id: TR3
+    spec:
+      containers:
+        - name: truck-agent
+          image: image-registry.openshift-image-registry.svc:5000/truck-fleet/truck-agent:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: truck-fleet-env
+          env:
+            - name: TRUCK_ID
+              value: TR3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

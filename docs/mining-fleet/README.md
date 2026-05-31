@@ -265,7 +265,9 @@ These paths support the patterns above; the full fleet demo workloads may live i
 |------|-----------|
 | [`poc/modbus/README.md`](../../poc/modbus/README.md) | Modbus PLC sims; **Modbus → Kafka** and **Kafka → Modbus** bridges |
 | [`poc/csv/README.md`](../../poc/csv/README.md) | **S3 CSV upload** and **S3 → Kafka** (crusher export handoff pattern) |
+| [`poc/truck-fleet/README.md`](../../poc/truck-fleet/README.md) | MQTT truck agents + **mqtt-ingest → PostgreSQL** |
 | [`openshift/modbus/`](../../openshift/modbus/) | Example namespace, BuildConfigs, Kafka topics |
+| [`openshift/truck-fleet/`](../../openshift/truck-fleet/) | Truck fleet namespace, Mosquitto, Postgres, BuildConfigs |
 | [`openshift/`](../../openshift/) | S3 CSV uploader/producer deployments, Kafka demo namespace |
 
 ---
@@ -295,6 +297,6 @@ These paths support the patterns above; the full fleet demo workloads may live i
 ## Next documents
 
 - **Phase 2 runbook** — Red Hat AMQ Streams install, topic manifests, Debezium connector, S3 poller, Modbus bridge env vars (to be added).
-- **OpenShift manifests** — per-namespace `Deployment` / `Service` / `PVC` / `Route` (to be added under `openshift/`).
+- **OpenShift manifests** — `openshift/truck-fleet/` (truck fleet); crusher and spray namespaces (to be added).
 
 For questions or extensions (OPC UA gateway, Metrics-style cloud export), keep crushers on **Modbus + historian + S3** and trucks on **MQTT + Postgres**; use Kafka only for **coordination** and **spray control**, not as a replacement for the historian archive.

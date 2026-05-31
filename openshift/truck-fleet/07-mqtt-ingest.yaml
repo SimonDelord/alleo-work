@@ -1,0 +1,43 @@
+# Truck fleet pipeline — mqtt-ingest subscribes and writes PostgreSQL.
+# Apply order (after builds complete):
+#   oc apply -f openshift/truck-fleet/01-namespace.yaml
+#   oc apply -f openshift/truck-fleet/02-configmaps-secrets.yaml
+#   oc apply -f openshift/truck-fleet/03-mqtt-broker.yaml
+#   oc apply -f openshift/truck-fleet/04-postgresql.yaml
+#   oc apply -f openshift/truck-fleet/05-buildconfigs.yaml
+#   oc start-build truck-agent mqtt-ingest -n truck-fleet --wait
+#   oc apply -f openshift/truck-fleet/06-truck-agents.yaml
+#   oc apply -f openshift/truck-fleet/07-mqtt-ingest.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt-ingest
+  namespace: truck-fleet
+  labels:
+    app: mqtt-ingest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mqtt-ingest
+  template:
+    metadata:
+      labels:
+        app: mqtt-ingest
+    spec:
+      containers:
+        - name: mqtt-ingest
+          image: image-registry.openshift-image-registry.svc:5000/truck-fleet/mqtt-ingest:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: truck-fleet-env
+            - secretRef:
+                name: postgresql-credentials
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
