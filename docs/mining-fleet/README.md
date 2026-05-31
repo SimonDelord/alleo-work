@@ -1,6 +1,6 @@
 # Mining fleet demo — three plant systems
 
-This document describes a **Fleet Management System** demonstration built on **OpenShift / ROSA**. The demo models a small open-pit mine as **three independent operational systems**, each running in its own Kubernetes namespace as a **closed ecosystem**. A shared **Apache Kafka** cluster (Strimzi) connects them in a second phase.
+This document describes a **Fleet Management System** demonstration built on **OpenShift / ROSA**. The demo models a small open-pit mine as **three independent operational systems**, each running in its own Kubernetes namespace as a **closed ecosystem**. A shared **Apache Kafka** cluster (**Red Hat AMQ Streams** on OpenShift) connects them in a second phase.
 
 The goal is a credible story for stakeholders:
 
@@ -22,7 +22,7 @@ Each system can be developed, deployed, and demonstrated **on its own**. Integra
 │  MQTT + Postgres│  Modbus + historian + S3│  Modbus PLCs (north / south)    │
 └────────┬────────┴────────────┬────────────┴──────────────┬──────────────────┘
          │                     │                           │
-         │         Phase 2 — Kafka (Strimzi) integration    │
+         │         Phase 2 — Kafka (AMQ Streams) integration │
          └─────────────────────┼───────────────────────────┘
                                ▼
                     ┌──────────────────────┐
@@ -202,7 +202,7 @@ South spray follows the same pattern with south crusher / south zone events.
 
 ## Phase 2 — Kafka integration (overview)
 
-Once each ecosystem runs stand-alone, deploy a **Strimzi Kafka** cluster (this repository already includes examples under `openshift/` and `poc/modbus/` for topic wiring). Integration uses **three complementary patterns**:
+Once each ecosystem runs stand-alone, deploy a **Kafka** cluster with **Red Hat AMQ Streams** (this repository already includes examples under `openshift/` and `poc/modbus/` for topic wiring). Integration uses **three complementary patterns**:
 
 ```text
                     ┌──────────────── Kafka ────────────────┐
@@ -270,7 +270,7 @@ These paths support the patterns above; the full fleet demo workloads may live i
 
 ## Deployment order (recommended)
 
-1. **Kafka** — Strimzi cluster, topics `fleet.*`.
+1. **Kafka** — AMQ Streams cluster, topics `fleet.*`.
 2. **`truck-fleet`** — Postgres, MQTT, mqtt-ingest, truck Pods; live map against Postgres.
 3. **`crusher-fleet`** — North/South PLC Pods, collector, historian, S3 export.
 4. **`water-spray-fleet`** — North/South spray PLC Pods; then Kafka → Modbus bridge + spray-controller.
@@ -292,7 +292,7 @@ These paths support the patterns above; the full fleet demo workloads may live i
 
 ## Next documents
 
-- **Phase 2 runbook** — Strimzi install, topic manifests, Debezium connector, S3 poller, Modbus bridge env vars (to be added).
+- **Phase 2 runbook** — Red Hat AMQ Streams install, topic manifests, Debezium connector, S3 poller, Modbus bridge env vars (to be added).
 - **OpenShift manifests** — per-namespace `Deployment` / `Service` / `PVC` / `Route` (to be added under `openshift/`).
 
 For questions or extensions (OPC UA gateway, Metrics-style cloud export), keep crushers on **Modbus + historian + S3** and trucks on **MQTT + Postgres**; use Kafka only for **coordination** and **spray control**, not as a replacement for the historian archive.
