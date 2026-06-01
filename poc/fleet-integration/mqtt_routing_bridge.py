@@ -111,7 +111,7 @@ class MqttRoutingBridge:
             LOG.warning("Ignoring invalid truck command: %s", command)
             return
 
-        if self._last_published_action.get(truck_id) == action:
+        if self._last_published_action.get(truck_id) == action and action != "resume":
             LOG.debug("Already published %s action=%s, skipping", truck_id, action)
             return
 

@@ -61,12 +61,20 @@ INITIAL_FILL_PCT = float(os.environ.get("INITIAL_FILL_PCT", "0"))
 class CrusherPLC:
     """Modbus register block with optional processing drain — no autonomous fill."""
 
-    def __init__(self, block: ModbusSequentialDataBlock) -> None:
+    def __init__(self, block: ModbusSequentialDataBlock, initial_fill: float = 0.0) -> None:
         self._block = block
         self._fault = False
+        # Sub-percent drain requires float state; integer registers lose fractional progress.
+        self._fill = float(initial_fill)
 
     def _read_fill(self) -> float:
         return float(self._block.getValues(REG_FILL_PCT, 1)[0])
+
+    def _sync_external_fill(self) -> None:
+        """Pick up fill increases from external Modbus writes (dump events)."""
+        block_fill = self._read_fill()
+        if block_fill > int(round(self._fill)):
+            self._fill = float(block_fill)
 
     def _read_dump_count(self) -> int:
         return int(self._block.getValues(REG_DUMP_COUNT, 1)[0])
@@ -101,15 +109,15 @@ class CrusherPLC:
         self._block.setValues(REG_READY, [ready])
 
     async def tick(self) -> None:
-        fill = self._read_fill()
+        self._sync_external_fill()
         dump_count = self._read_dump_count()
 
-        if not self._fault and fill > 0 and DRAIN_RATE_PCT > 0:
-            fill = max(0.0, fill - DRAIN_RATE_PCT)
+        if not self._fault and self._fill > 0 and DRAIN_RATE_PCT > 0:
+            self._fill = max(0.0, self._fill - DRAIN_RATE_PCT)
 
-        self._write_registers(fill)
+        self._write_registers(self._fill)
 
-        fill_int = int(round(fill))
+        fill_int = int(round(self._fill))
         status = self._block.getValues(REG_STATUS, 1)[0]
         LOG.info(
             "%s fill=%d%% status=%s dumps=%d throughput=%d tph",
@@ -138,7 +146,7 @@ async def run() -> None:
     store = ModbusSlaveContext(hr=block, zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
 
-    plc = CrusherPLC(block)
+    plc = CrusherPLC(block, initial_fill=INITIAL_FILL_PCT)
     plc._write_registers(INITIAL_FILL_PCT)
 
     LOG.info(

@@ -194,8 +194,15 @@ class DestinationRouter:
 
     def _emit_truck_command(self, truck_id: str, action: str, reason: str) -> None:
         with self._lock:
-            if self._last_truck_action.get(truck_id) == action:
-                return
+            truck = self._trucks.get(truck_id)
+            last_action = self._last_truck_action.get(truck_id)
+            if last_action == action:
+                if (
+                    action != "resume"
+                    or truck is None
+                    or str(truck.get("state", "")) != "stopped"
+                ):
+                    return
             self._last_truck_action[truck_id] = action
             if action == "stop":
                 self._stopped_by_router.add(truck_id)
@@ -227,14 +234,13 @@ class DestinationRouter:
             return
 
         with self._lock:
-            to_resume = sorted(self._stopped_by_router)
-        for truck_id in to_resume:
+            truck_ids = list(self._trucks.keys())
+        for truck_id in truck_ids:
             with self._lock:
                 truck = self._trucks.get(truck_id)
             if truck is None:
                 continue
-            state = str(truck.get("state", ""))
-            if state == "stopped" or truck_id in self._stopped_by_router:
+            if str(truck.get("state", "")) == "stopped":
                 self._emit_truck_command(truck_id, "resume", "crusher_capacity_available")
 
     def _evaluate_truck(self, truck_id: str) -> None:
