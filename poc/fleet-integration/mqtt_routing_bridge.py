@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Orchestration bridge: consumes fleet.routing.commands from Kafka and publishes
-retained new-destination MQTT messages to truck-fleet broker.
+Kafka → MQTT bridge for fleet orchestration commands.
 
-This is the only component that crosses into truck-fleet MQTT — trucks remain
-unchanged and subscribe to new-destination/{truck_id}/{crusher_name} as before.
+Consumes:
+  - fleet.routing.commands → retained new-destination/{truck_id}/{crusher_name}
+  - fleet.truck.commands   → fleet/trucks/{truck_id}/command (stop/resume JSON)
+
+This is the only component that crosses into truck-fleet MQTT — trucks subscribe
+to new-destination and command topics as before.
 """
 
 from __future__ import annotations
@@ -29,11 +32,13 @@ BOOTSTRAP = os.environ.get(
     "KAFKA_BOOTSTRAP_SERVERS",
     os.environ.get("KAFKA_BOOTSTRAP", "my-cluster-kafka-bootstrap.kafka-demo.svc:9092"),
 )
-KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC_ROUTING_COMMANDS", "fleet.routing.commands")
+TOPIC_ROUTING_COMMANDS = os.environ.get("KAFKA_TOPIC_ROUTING_COMMANDS", "fleet.routing.commands")
+TOPIC_TRUCK_COMMANDS = os.environ.get("KAFKA_TOPIC_TRUCK_COMMANDS", "fleet.truck.commands")
 CONSUMER_GROUP = os.environ.get("KAFKA_CONSUMER_GROUP", "mqtt-routing-bridge")
 MQTT_HOST = os.environ.get("MQTT_HOST", "mqtt-broker.truck-fleet.svc")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 NEW_DESTINATION_TOPIC = os.environ.get("MQTT_NEW_DESTINATION_TOPIC", "new-destination")
+TRUCK_COMMAND_TOPIC_PREFIX = os.environ.get("MQTT_TRUCK_COMMAND_TOPIC_PREFIX", "fleet/trucks")
 ROUTING_SOURCE = os.environ.get("ROUTING_SOURCE", "fleet-integration")
 
 
@@ -51,10 +56,15 @@ def _parse_command(raw: bytes | None) -> dict[str, Any] | None:
         return None
 
 
+def _kafka_topics() -> list[str]:
+    return [TOPIC_ROUTING_COMMANDS, TOPIC_TRUCK_COMMANDS]
+
+
 class MqttRoutingBridge:
     def __init__(self) -> None:
         self._mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="mqtt-routing-bridge")
-        self._last_published: dict[str, str] = {}
+        self._last_published_destination: dict[str, str] = {}
+        self._last_published_action: dict[str, str] = {}
 
     def connect_mqtt(self) -> None:
         while True:
@@ -73,7 +83,7 @@ class MqttRoutingBridge:
             LOG.warning("Ignoring invalid routing command: %s", command)
             return
 
-        if self._last_published.get(truck_id) == crusher_name:
+        if self._last_published_destination.get(truck_id) == crusher_name:
             LOG.debug("Already published %s → %s, skipping", truck_id, crusher_name)
             return
 
@@ -91,8 +101,44 @@ class MqttRoutingBridge:
             qos=1,
             retain=True,
         )
-        self._last_published[truck_id] = crusher_name
+        self._last_published_destination[truck_id] = crusher_name
         LOG.info("Published MQTT %s (reason=%s)", topic, payload.get("reason"))
+
+    def publish_truck_command(self, command: dict[str, Any]) -> None:
+        truck_id = str(command.get("truck_id", ""))
+        action = str(command.get("action", "")).lower()
+        if not truck_id or action not in ("stop", "resume"):
+            LOG.warning("Ignoring invalid truck command: %s", command)
+            return
+
+        if self._last_published_action.get(truck_id) == action:
+            LOG.debug("Already published %s action=%s, skipping", truck_id, action)
+            return
+
+        topic = f"{TRUCK_COMMAND_TOPIC_PREFIX}/{truck_id}/command"
+        payload = {
+            "action": action,
+            "truck_id": truck_id,
+            "reason": command.get("reason"),
+            "source": command.get("source") or ROUTING_SOURCE,
+            "decided_at": command.get("decided_at") or _now_iso(),
+        }
+        self._mqtt.publish(
+            topic,
+            json.dumps(payload, separators=(",", ":")),
+            qos=1,
+            retain=False,
+        )
+        self._last_published_action[truck_id] = action
+        LOG.info("Published MQTT %s action=%s (reason=%s)", topic, action, payload.get("reason"))
+
+    def handle_kafka_message(self, topic: str, command: dict[str, Any]) -> None:
+        if topic == TOPIC_ROUTING_COMMANDS:
+            self.publish_destination(command)
+        elif topic == TOPIC_TRUCK_COMMANDS:
+            self.publish_truck_command(command)
+        else:
+            LOG.warning("Unexpected Kafka topic %s", topic)
 
     def run(self, running: list[bool]) -> None:
         self.connect_mqtt()
@@ -101,7 +147,7 @@ class MqttRoutingBridge:
         while running[0]:
             try:
                 consumer = KafkaConsumer(
-                    KAFKA_TOPIC,
+                    *_kafka_topics(),
                     bootstrap_servers=BOOTSTRAP.split(","),
                     group_id=CONSUMER_GROUP,
                     auto_offset_reset="latest",
@@ -109,16 +155,17 @@ class MqttRoutingBridge:
                     value_deserializer=lambda v: v,
                 )
                 LOG.info(
-                    "Kafka consumer subscribed to %s, publishing to MQTT %s",
-                    KAFKA_TOPIC,
+                    "Kafka consumer subscribed to %s, publishing routing → %s and commands → %s/+/command",
+                    _kafka_topics(),
                     NEW_DESTINATION_TOPIC,
+                    TRUCK_COMMAND_TOPIC_PREFIX,
                 )
                 for message in consumer:
                     if not running[0]:
                         break
                     command = _parse_command(message.value)
                     if command is not None:
-                        self.publish_destination(command)
+                        self.handle_kafka_message(message.topic, command)
                 consumer.close()
             except NoBrokersAvailable as exc:
                 if not running[0]:

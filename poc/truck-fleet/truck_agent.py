@@ -4,7 +4,8 @@ Simulated haul truck: cycles loading → hauling → dumping → returning,
 publishing JSON telemetry to MQTT on each tick.
 
 Crusher destination is bootstrapped from DEFAULT_CRUSHER and updated at runtime
-via MQTT new-destination messages.
+via MQTT new-destination messages. Stop/resume commands arrive on
+fleet/trucks/{truck_id}/command.
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ class TruckState(str, Enum):
     HAULING = "hauling"
     DUMPING = "dumping"
     RETURNING = "returning"
+    STOPPED = "stopped"
 
 
 @dataclass
@@ -70,6 +72,8 @@ class SimState:
     dwell_ticks: int = 0
     destination_crusher: str = DEFAULT_CRUSHER
     assignment_source: str = "bootstrap"
+    paused_from_state: TruckState | None = None
+    stop_reason: str | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
@@ -129,6 +133,36 @@ def _handle_new_destination(sim: SimState, topic: str, payload: dict | None) -> 
     _apply_destination(sim, str(crusher_name), source)
 
 
+def _handle_truck_command(sim: SimState, payload: dict | None) -> None:
+    if not payload:
+        return
+    payload_truck = payload.get("truck_id")
+    if payload_truck is not None and str(payload_truck) != TRUCK_ID:
+        return
+
+    action = str(payload.get("action", "")).lower()
+    reason = str(payload.get("reason", "command"))
+
+    with sim._lock:
+        if action == "stop":
+            if sim.state == TruckState.STOPPED:
+                return
+            sim.paused_from_state = sim.state
+            sim.state = TruckState.STOPPED
+            sim.stop_reason = reason
+            LOG.info("Stopped (was %s, reason=%s)", sim.paused_from_state.value, reason)
+        elif action == "resume":
+            if sim.state != TruckState.STOPPED:
+                return
+            resume_state = sim.paused_from_state or TruckState.HAULING
+            sim.state = resume_state
+            sim.paused_from_state = None
+            sim.stop_reason = None
+            LOG.info("Resumed to %s (reason=%s)", resume_state.value, reason)
+        else:
+            LOG.warning("Unknown truck command action: %s", action)
+
+
 def _kmh_to_m_per_tick(speed_kmh: float, tick_sec: float) -> float:
     return (speed_kmh * 1000.0 / 3600.0) * tick_sec
 
@@ -156,6 +190,8 @@ def _move_toward(
 
 
 def _current_speed_kmh(sim: SimState) -> float:
+    if sim.state == TruckState.STOPPED:
+        return 0.0
     if sim.state in (TruckState.HAULING, TruckState.RETURNING):
         return HAUL_SPEED_KMH if sim.state == TruckState.HAULING else RETURN_SPEED_KMH
     return 0.0
@@ -163,6 +199,9 @@ def _current_speed_kmh(sim: SimState) -> float:
 
 def _advance(sim: SimState) -> None:
     with sim._lock:
+        if sim.state == TruckState.STOPPED:
+            return
+
         crusher = sim.destination_crusher
         crusher_pos = CRUSHERS.get(crusher, CRUSHERS["crusher-1"])
 
@@ -210,7 +249,7 @@ def _advance(sim: SimState) -> None:
 
 def _telemetry_payload(sim: SimState) -> dict:
     with sim._lock:
-        return {
+        payload = {
             "truck_id": TRUCK_ID,
             "state": sim.state.value,
             "lat": round(sim.y / 111_000.0, 6),
@@ -224,6 +263,11 @@ def _telemetry_payload(sim: SimState) -> dict:
             "assignment_source": sim.assignment_source,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        if sim.state == TruckState.STOPPED and sim.paused_from_state:
+            payload["paused_from_state"] = sim.paused_from_state.value
+        if sim.stop_reason:
+            payload["stop_reason"] = sim.stop_reason
+        return payload
 
 
 def main() -> None:
@@ -237,6 +281,7 @@ def main() -> None:
 
     sim = SimState(destination_crusher=DEFAULT_CRUSHER, assignment_source="bootstrap")
     destination_subscribe = f"{NEW_DESTINATION_TOPIC}/{TRUCK_ID}/+"
+    command_subscribe = f"{TOPIC_PREFIX}/{TRUCK_ID}/command"
     telemetry_topic = f"{TOPIC_PREFIX}/{TRUCK_ID}/telemetry"
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"truck-{TRUCK_ID}")
@@ -251,7 +296,8 @@ def main() -> None:
         del userdata, flags, properties
         if reason_code == 0:
             client.subscribe(destination_subscribe, qos=1)
-            LOG.info("Subscribed to %s", destination_subscribe)
+            client.subscribe(command_subscribe, qos=1)
+            LOG.info("Subscribed to %s and %s", destination_subscribe, command_subscribe)
         else:
             LOG.error("MQTT connect failed with code %s", reason_code)
 
@@ -268,8 +314,12 @@ def main() -> None:
                 if isinstance(decoded, dict):
                     payload = decoded
             except json.JSONDecodeError:
-                LOG.debug("Non-JSON payload on %s, using topic path only", msg.topic)
-        _handle_new_destination(sim, msg.topic, payload)
+                LOG.debug("Non-JSON payload on %s", msg.topic)
+
+        if msg.topic.startswith(f"{NEW_DESTINATION_TOPIC}/"):
+            _handle_new_destination(sim, msg.topic, payload)
+        elif msg.topic == command_subscribe:
+            _handle_truck_command(sim, payload)
 
     client.on_connect = on_connect
     client.on_message = on_message

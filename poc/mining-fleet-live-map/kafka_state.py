@@ -103,6 +103,7 @@ def _route_phase(truck_state: str | None) -> str:
         "returning": "returning",
         "dumping": "dumping",
         "loading": "loading",
+        "stopped": "stopped",
     }
     return mapping.get(truck_state or "", truck_state or "")
 
@@ -225,6 +226,21 @@ class FleetLiveMapState:
                 }
             )
             self._last_kafka_message_at = _now_iso()
+
+    def apply_acknowledgement(self, payload: dict[str, Any]) -> None:
+        message = str(payload.get("message", "Operator acknowledged exceptions"))
+        with self._lock:
+            self._exceptions.appendleft(
+                {
+                    "created_at": _now_iso(),
+                    "truck_id": payload.get("truck_id"),
+                    "bay_id": None,
+                    "severity": "info",
+                    "message": message,
+                    "reason": "acknowledge",
+                    "source": "fleet-live-map",
+                }
+            )
 
     def set_kafka_connected(self, connected: bool) -> None:
         with self._lock:

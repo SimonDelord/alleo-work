@@ -12,4 +12,7 @@ data:
   KAFKA_TOPIC_TRUCK_TELEMETRY: "fleet.trucks.telemetry"
   KAFKA_TOPIC_CRUSHER_STATE: "fleet.crushers.state"
   KAFKA_TOPIC_ROUTING_COMMANDS: "fleet.routing.commands"
+  KAFKA_TOPIC_TRUCK_COMMANDS: "fleet.truck.commands"
   KAFKA_CONSUMER_GROUP: "fleet-live-map"
+  VALID_CRUSHERS: "crusher-1,crusher-2"
+  FLEET_TRUCK_IDS: "TR1,TR2,TR3"

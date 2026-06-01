@@ -147,6 +147,23 @@
       font-size: 11px;
       white-space: nowrap;
     }
+    .demo-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .demo-actions button {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .demo-actions button:hover { border-color: var(--blue); }
+    .demo-actions button.danger { border-color: var(--red); color: #fca5a5; }
   </style>
 </head>
 <body>
@@ -155,7 +172,14 @@
       <h1 id="dash-title">Mine Operations — Trucks & Crushers</h1>
       <div class="sub">Real-time view from mining-fleet-kafka: truck telemetry, crusher state, routing commands</div>
     </div>
-    <div class="live-badge"><span class="dot"></span><span id="freshness">Connecting…</span></div>
+    <div class="live-badge">
+      <div class="demo-actions">
+        <button type="button" id="btn-stop-fleet" class="danger" title="POST /api/command stop_fleet">Stop fleet</button>
+        <button type="button" id="btn-resume-fleet" title="POST /api/command resume_fleet">Resume fleet</button>
+        <button type="button" id="btn-ack" title="POST /api/command acknowledge">Acknowledge</button>
+      </div>
+      <span class="dot"></span><span id="freshness">Connecting…</span>
+    </div>
   </header>
 
   <section class="top-row">
@@ -202,6 +226,7 @@
         <span><i style="background:#94a3b8"></i> Truck waiting</span>
         <span><i style="background:var(--green)"></i> Truck empty</span>
         <span><i style="background:var(--orange)"></i> Truck full</span>
+        <span><i style="background:#a855f7"></i> Truck stopped</span>
         <span><i style="background:var(--blue)"></i> Dumping</span>
         <span>— — Route line</span>
       </div>
@@ -264,11 +289,23 @@
 
     const truckColor = (t) => {
       const loadState = t.load_state || t.mission_state;
+      if (t.mission_state === "stopped" || loadState === "stopped") return "#a855f7";
       if (loadState === "dumping") return "#3b82f6";
       if (loadState === "waiting") return "#94a3b8";
       if (t.payload_state === "full" || loadState === "full") return "#f97316";
       return "#22c55e";
     };
+
+    async function sendCommand(body) {
+      const res = await fetch("/api/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
 
     function drawGauge(svgId, pct) {
       const col = crusherColor(pct);
@@ -417,9 +454,15 @@
 
     function drawTrucks(trucks) {
       routeLayers.clearLayers();
+      const positionCounts = {};
       (trucks || []).forEach((t) => {
         const id = t.truck_id;
-        const latlng = getDisplayLatLng(id) || [t.lat, t.lon];
+        const base = getDisplayLatLng(id) || [t.lat, t.lon];
+        const key = `${base[0].toFixed(5)},${base[1].toFixed(5)}`;
+        const idx = positionCounts[key] || 0;
+        positionCounts[key] = idx + 1;
+        const offset = idx * 0.00008;
+        const latlng = [base[0] + offset, base[1] + offset];
         const color = truckColor(t);
 
         if (!truckMarkers[id]) {
@@ -487,6 +530,31 @@
 
     tick();
     setInterval(tick, POLL_MS);
+
+    document.getElementById("btn-stop-fleet").addEventListener("click", async () => {
+      try {
+        await sendCommand({ action: "stop_fleet", reason: "manual_stop_fleet" });
+        document.getElementById("freshness").textContent = "Stop fleet command sent";
+      } catch (err) {
+        document.getElementById("freshness").textContent = `Command error: ${err.message}`;
+      }
+    });
+    document.getElementById("btn-resume-fleet").addEventListener("click", async () => {
+      try {
+        await sendCommand({ action: "resume_fleet", reason: "manual_resume_fleet" });
+        document.getElementById("freshness").textContent = "Resume fleet command sent";
+      } catch (err) {
+        document.getElementById("freshness").textContent = `Command error: ${err.message}`;
+      }
+    });
+    document.getElementById("btn-ack").addEventListener("click", async () => {
+      try {
+        await sendCommand({ action: "acknowledge", message: "Operator acknowledged exceptions" });
+        tick();
+      } catch (err) {
+        document.getElementById("freshness").textContent = `Command error: ${err.message}`;
+      }
+    });
   </script>
 </body>
 </html>

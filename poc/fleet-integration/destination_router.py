@@ -3,6 +3,9 @@
 Routing intelligence: consumes truck telemetry and crusher state from Kafka,
 decides destination changes, and produces fleet.routing.commands.
 
+When both crushers are at capacity, hauling trucks receive stop commands on
+fleet.truck.commands. Resume when capacity is available again.
+
 This service lives in fleet-integration — not in truck-fleet or crusher-fleet.
 """
 
@@ -30,6 +33,7 @@ BOOTSTRAP = os.environ.get(
 TOPIC_TRUCK_TELEMETRY = os.environ.get("KAFKA_TOPIC_TRUCK_TELEMETRY", "fleet.trucks.telemetry")
 TOPIC_CRUSHER_STATE = os.environ.get("KAFKA_TOPIC_CRUSHER_STATE", "fleet.crushers.state")
 TOPIC_ROUTING_COMMANDS = os.environ.get("KAFKA_TOPIC_ROUTING_COMMANDS", "fleet.routing.commands")
+TOPIC_TRUCK_COMMANDS = os.environ.get("KAFKA_TOPIC_TRUCK_COMMANDS", "fleet.truck.commands")
 CONSUMER_GROUP = os.environ.get("KAFKA_CONSUMER_GROUP", "destination-router")
 VALID_CRUSHERS = frozenset(
     c.strip()
@@ -39,9 +43,10 @@ VALID_CRUSHERS = frozenset(
 FALLBACK_CRUSHER = os.environ.get("FALLBACK_CRUSHER", "crusher-2")
 HAULING_STATES = frozenset(
     s.strip()
-    for s in os.environ.get("ROUTING_ACTIVE_STATES", "hauling,loading").split(",")
+    for s in os.environ.get("ROUTING_ACTIVE_STATES", "hauling").split(",")
     if s.strip()
 )
+STOP_REASON = os.environ.get("FLEET_STOP_REASON", "both_crushers_at_capacity")
 
 
 def _now_iso() -> str:
@@ -63,7 +68,9 @@ class DestinationRouter:
         self._lock = threading.Lock()
         self._trucks: dict[str, dict[str, Any]] = {}
         self._crushers: dict[str, dict[str, Any]] = {}
-        self._last_command: dict[str, str] = {}
+        self._last_routing_command: dict[str, str] = {}
+        self._stopped_by_router: set[str] = set()
+        self._last_truck_action: dict[str, str] = {}
         self._producer = self._create_producer()
         self._consumer = self._create_consumer()
 
@@ -142,6 +149,20 @@ class DestinationRouter:
                 return False
             return bool(crusher.get("at_capacity")) or str(crusher.get("status")) == "full"
 
+    def _all_crushers_at_capacity(self) -> bool:
+        if not VALID_CRUSHERS:
+            return False
+        with self._lock:
+            for crusher_name in VALID_CRUSHERS:
+                crusher = self._crushers.get(crusher_name)
+                if crusher is None:
+                    return False
+                if not (
+                    crusher.get("at_capacity") or str(crusher.get("status")) == "full"
+                ):
+                    return False
+        return True
+
     def _alternate_crusher(self, current: str) -> str | None:
         alternatives = sorted(c for c in VALID_CRUSHERS if c != current)
         for candidate in alternatives:
@@ -151,9 +172,9 @@ class DestinationRouter:
 
     def _emit_routing_command(self, truck_id: str, crusher_name: str, reason: str) -> None:
         with self._lock:
-            if self._last_command.get(truck_id) == crusher_name:
+            if self._last_routing_command.get(truck_id) == crusher_name:
                 return
-            self._last_command[truck_id] = crusher_name
+            self._last_routing_command[truck_id] = crusher_name
 
         command = {
             "truck_id": truck_id,
@@ -171,7 +192,55 @@ class DestinationRouter:
             reason,
         )
 
+    def _emit_truck_command(self, truck_id: str, action: str, reason: str) -> None:
+        with self._lock:
+            if self._last_truck_action.get(truck_id) == action:
+                return
+            self._last_truck_action[truck_id] = action
+            if action == "stop":
+                self._stopped_by_router.add(truck_id)
+            elif action == "resume":
+                self._stopped_by_router.discard(truck_id)
+
+        command = {
+            "truck_id": truck_id,
+            "action": action,
+            "reason": reason,
+            "decided_at": _now_iso(),
+            "source": "destination-router",
+        }
+        self._producer.send(TOPIC_TRUCK_COMMANDS, key=truck_id, value=command)
+        self._producer.flush(timeout=5)
+        LOG.info("Truck command: %s action=%s (reason=%s)", truck_id, action, reason)
+
+    def _evaluate_fleet_stop(self) -> None:
+        if self._all_crushers_at_capacity():
+            with self._lock:
+                truck_ids = list(self._trucks.keys())
+            for truck_id in truck_ids:
+                with self._lock:
+                    truck = self._trucks.get(truck_id)
+                if truck is None:
+                    continue
+                if str(truck.get("state", "")) in HAULING_STATES:
+                    self._emit_truck_command(truck_id, "stop", STOP_REASON)
+            return
+
+        with self._lock:
+            to_resume = sorted(self._stopped_by_router)
+        for truck_id in to_resume:
+            with self._lock:
+                truck = self._trucks.get(truck_id)
+            if truck is None:
+                continue
+            state = str(truck.get("state", ""))
+            if state == "stopped" or truck_id in self._stopped_by_router:
+                self._emit_truck_command(truck_id, "resume", "crusher_capacity_available")
+
     def _evaluate_truck(self, truck_id: str) -> None:
+        if self._all_crushers_at_capacity():
+            return
+
         with self._lock:
             truck = self._trucks.get(truck_id)
             if truck is None:
@@ -188,9 +257,9 @@ class DestinationRouter:
 
         alternate = self._alternate_crusher(destination)
         if alternate is None:
-            alternate = FALLBACK_CRUSHER if FALLBACK_CRUSHER != destination else None
-        if alternate is None or alternate == destination:
             LOG.debug("No alternate crusher for %s (current=%s)", truck_id, destination)
+            return
+        if alternate == destination:
             return
 
         self._emit_routing_command(
@@ -200,6 +269,9 @@ class DestinationRouter:
         )
 
     def _evaluate_all_trucks(self) -> None:
+        self._evaluate_fleet_stop()
+        if self._all_crushers_at_capacity():
+            return
         with self._lock:
             truck_ids = list(self._trucks.keys())
         for truck_id in truck_ids:
@@ -208,7 +280,7 @@ class DestinationRouter:
     def _handle_truck_telemetry(self, event: dict[str, Any]) -> None:
         truck_id = str(event.get("truck_id", ""))
         self._update_truck(event)
-        self._evaluate_truck(truck_id)
+        self._evaluate_all_trucks()
 
     def _handle_crusher_state(self, event: dict[str, Any]) -> None:
         self._update_crusher(event)
@@ -216,10 +288,11 @@ class DestinationRouter:
 
     def run(self, running: list[bool]) -> None:
         LOG.info(
-            "Destination router started: consume [%s, %s] → produce %s",
+            "Destination router started: consume [%s, %s] → produce %s, %s",
             TOPIC_TRUCK_TELEMETRY,
             TOPIC_CRUSHER_STATE,
             TOPIC_ROUTING_COMMANDS,
+            TOPIC_TRUCK_COMMANDS,
         )
         for message in self._consumer:
             if not running[0]:

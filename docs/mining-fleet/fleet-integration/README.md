@@ -157,11 +157,33 @@ Partition key: `truck_id`
 
 MQTT bridge publishes to **`new-destination/{truck_id}/{crusher_name}`** with retained QoS 1 (same contract trucks already use).
 
+### `fleet.truck.commands`
+
+Produced by: `destination-router`, `fleet-live-map` (manual). Consumed by: `mqtt-routing-bridge`.
+
+Partition key: `truck_id`
+
+```json
+{
+  "truck_id": "TR1",
+  "action": "stop",
+  "reason": "both_crushers_at_capacity",
+  "decided_at": "2026-06-01T12:00:05+00:00",
+  "source": "destination-router"
+}
+```
+
+MQTT bridge publishes to **`fleet/trucks/{truck_id}/command`** with JSON `{"action": "stop"|"resume", ...}` (QoS 1, not retained).
+
 ---
 
-## Routing rule
+## Routing rules
 
-When a truck is in **`hauling`** or **`loading`** state and its `destination_crusher` is **at capacity** (from `fleet.crushers.state`, published by `crusher-fill-bridge` after truck dumps fill crushers), `destination-router` emits a command to the first available alternate crusher (`crusher-2` by default).
+When a truck is in **`hauling`** state and its `destination_crusher` is **at capacity** (from `fleet.crushers.state`), `destination-router` emits a command to the first available alternate crusher.
+
+When **both** crushers are at capacity, all trucks in **`hauling`** receive **stop** commands on `fleet.truck.commands`. When at least one crusher has capacity again, stopped trucks are **resumed** automatically.
+
+Crusher PLCs drain fill at a constant rate (`DRAIN_RATE_PCT` per tick) when not receiving dumps, simulating ore processing. The historian continues polling Modbus → PostgreSQL.
 
 Crusher fill increases only when trucks dump — watch fill rise in PostgreSQL as trucks cycle:
 
@@ -187,7 +209,7 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 | **`kafka-truck-bridge`** | Subscribes `fleet/trucks/+/telemetry` on truck-fleet MQTT → produces `fleet.trucks.telemetry` (for destination-router) |
 | **`crusher-fill-bridge`** | Subscribes truck MQTT telemetry (read-only) → writes crusher Modbus on dump events → publishes `fleet.crushers.state` |
 | **`destination-router`** | Consumes telemetry + crusher state → produces `fleet.routing.commands` |
-| **`mqtt-routing-bridge`** | Consumes routing commands → publishes `new-destination/{truck}/{crusher}` to truck-fleet MQTT |
+| **`mqtt-routing-bridge`** | Consumes routing + truck commands → publishes `new-destination/{truck}/{crusher}` and `fleet/trucks/{truck}/command` to truck-fleet MQTT |
 | **`crusher-state-producer`** | Deprecated mock (replicas=0); replaced by `crusher-fill-bridge` |
 
 ---
@@ -255,7 +277,10 @@ Shared ConfigMap **`fleet-integration-env`**:
 | `KAFKA_BOOTSTRAP_SERVERS` | `mining-fleet-cluster-kafka-bootstrap.mining-fleet-kafka.svc:9092` | kafka-truck-bridge, crusher-fill-bridge (produce), destination-router, mqtt-routing-bridge |
 | `KAFKA_TOPIC_TRUCK_TELEMETRY` | `fleet.trucks.telemetry` | kafka-truck-bridge, destination-router |
 | `KAFKA_TOPIC_CRUSHER_STATE` | `fleet.crushers.state` | crusher-fill-bridge, destination-router |
-| `KAFKA_TOPIC_ROUTING_COMMANDS` | `fleet.routing.commands` | destination-router, mqtt-routing-bridge |
+| `KAFKA_TOPIC_ROUTING_COMMANDS` | `fleet.routing.commands` | destination-router, mqtt-routing-bridge, fleet-live-map |
+| `KAFKA_TOPIC_TRUCK_COMMANDS` | `fleet.truck.commands` | destination-router, mqtt-routing-bridge, fleet-live-map |
+| `ROUTING_ACTIVE_STATES` | `hauling` | destination-router |
+| `MQTT_TRUCK_COMMAND_TOPIC_PREFIX` | `fleet/trucks` | mqtt-routing-bridge |
 | `MQTT_BROKER` | `mqtt-broker.truck-fleet.svc:1883` | crusher-fill-bridge |
 | `MQTT_HOST` | `mqtt-broker.truck-fleet.svc` | kafka-truck-bridge, mqtt-routing-bridge |
 | `MQTT_PORT` | `1883` | kafka-truck-bridge, crusher-fill-bridge, mqtt-routing-bridge |

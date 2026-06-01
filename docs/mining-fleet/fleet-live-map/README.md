@@ -38,9 +38,30 @@ Bootstrap server (in-cluster): `mining-fleet-cluster-kafka-bootstrap.mining-flee
 |-------|----------|-----------------|
 | `fleet.trucks.telemetry` | `kafka-truck-bridge` | `truck_id`, `state`, `lat`/`lon` or `position_x`/`position_y`, `load_pct`, `destination_crusher`, `speed_kmh`, `timestamp` |
 | `fleet.crushers.state` | `crusher-fill-bridge` | `crusher_name`, `status`, `fill_pct`, `at_capacity`, `updated_at` |
-| `fleet.routing.commands` | `destination-router` | `truck_id`, `crusher_name`, `reason`, `decided_at` |
+| `fleet.routing.commands` | `destination-router`, `fleet-live-map` | `truck_id`, `crusher_name`, `reason`, `decided_at` |
+| `fleet.truck.commands` | `destination-router`, `fleet-live-map` | `truck_id`, `action` (`stop`/`resume`), `reason`, `decided_at` |
 
 Routing commands populate the **Controller exceptions** panel (reroute reasons such as `crusher-1_at_capacity`).
+
+## Operator commands (POST /api/command)
+
+The live map can publish manual commands to Kafka:
+
+```bash
+# Manual reroute
+curl -s -X POST https://mining-fleet-live-map.apps.rosa.rosa-g74q8.ybzo.p3.openshiftapps.com/api/command \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"reroute","truck_id":"TR1","crusher_name":"crusher-2","reason":"manual_reroute"}'
+
+# Stop all trucks
+curl -s -X POST .../api/command -H 'Content-Type: application/json' \
+  -d '{"action":"stop_fleet","reason":"manual_stop_fleet"}'
+
+# API schema
+curl -s .../api/command
+```
+
+Actions: `reroute`, `stop`, `resume`, `stop_fleet`, `resume_fleet`, `acknowledge`.
 
 Debezium CDC topics (`fleet.truckdb.public.truck_state`, `fleet.crusherdb.public.crusher_state`, etc.) are available for Phase 2 enrichment but are **not** consumed by this v1 dashboard.
 
@@ -112,4 +133,4 @@ Open the route in a browser: truck markers move on the mine map, crusher gauges 
 
 - Consume Debezium CDC topics as fallback when MQTT bridge is offline
 - SSE/WebSocket push instead of 500 ms polling
-- Operator action to acknowledge / stop rerouting (control plane — not observability)
+- Operator action to acknowledge / stop rerouting (control plane — **POST /api/command** implemented)
