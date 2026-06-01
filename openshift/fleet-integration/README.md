@@ -47,6 +47,6 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 | `06-crusher-state-producer.yaml` | Deprecated mock (replicas=0) |
 | `07-destination-router.yaml` | Routing intelligence |
 | `08-mqtt-routing-bridge.yaml` | Kafka → MQTT new-destination bridge |
-| `09-crusher-fill-bridge.yaml` | Truck dump → crusher Modbus + Kafka state |
+| `09-crusher-fill-bridge.yaml` | MQTT truck telemetry → crusher Modbus + Kafka state |
 
 Application source: **`../../poc/fleet-integration/`**.

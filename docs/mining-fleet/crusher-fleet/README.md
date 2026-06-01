@@ -79,7 +79,7 @@ Each crusher PLC exposes **holding registers** starting at address 0 (Modbus fun
 
 ### PLC behaviour
 
-`crusher_plc.py` exposes Modbus TCP holding registers. Fill increases **only** when an external client writes registers (typically `crusher-fill-bridge` in `fleet-integration` after a truck dump event via Kafka). The PLC does **not** simulate truck dumps autonomously.
+`crusher_plc.py` exposes Modbus TCP holding registers. Fill increases **only** when an external client writes registers (typically `crusher-fill-bridge` in `fleet-integration`, which subscribes to truck MQTT telemetry and detects dump events). The PLC does **not** simulate truck dumps autonomously.
 
 Optional slow drain (`DRAIN_RATE_PCT`) simulates ore processing — fill decreases over time but never increases without external Modbus writes.
 

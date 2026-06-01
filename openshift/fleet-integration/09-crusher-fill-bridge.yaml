@@ -1,5 +1,6 @@
-# Consumes truck telemetry, writes crusher Modbus registers on dump events,
-# publishes live crusher state to fleet.crushers.state for destination-router.
+# Subscribes truck MQTT telemetry (read-only, truck-fleet broker), writes crusher
+# Modbus registers on dump events, publishes live crusher state to fleet.crushers.state
+# for destination-router.
 ---
 apiVersion: apps/v1
 kind: Deployment

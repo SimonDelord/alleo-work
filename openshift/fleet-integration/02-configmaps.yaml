@@ -10,6 +10,7 @@ data:
   KAFKA_TOPIC_TRUCK_TELEMETRY: "fleet.trucks.telemetry"
   KAFKA_TOPIC_CRUSHER_STATE: "fleet.crushers.state"
   KAFKA_TOPIC_ROUTING_COMMANDS: "fleet.routing.commands"
+  MQTT_BROKER: "mqtt-broker.truck-fleet.svc:1883"
   MQTT_HOST: "mqtt-broker.truck-fleet.svc"
   MQTT_PORT: "1883"
   MQTT_TOPIC_SUBSCRIBE: "fleet/trucks/+/telemetry"

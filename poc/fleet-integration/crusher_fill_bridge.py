@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Crusher fill bridge: consumes truck telemetry from Kafka and writes crusher Modbus
+Crusher fill bridge: subscribes to truck MQTT telemetry and writes crusher Modbus
 registers when trucks dump at a crusher bay.
 
-Lives in fleet-integration — connects truck-fleet (via Kafka) to crusher-fleet (via
-Modbus TCP) without direct coupling between those namespaces.
+Lives in fleet-integration — connects truck-fleet (via MQTT, read-only) to
+crusher-fleet (via Modbus TCP) without direct coupling between those namespaces.
 
 Also publishes fleet.crushers.state after each Modbus update so destination-router
 uses live fill levels instead of the mock crusher-state-producer.
@@ -22,20 +22,34 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from kafka import KafkaConsumer, KafkaProducer
+import paho.mqtt.client as mqtt
+from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable
 from pymodbus.client import ModbusTcpClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("crusher_fill_bridge")
 
+
+def _parse_mqtt_broker() -> tuple[str, int]:
+    broker = os.environ.get("MQTT_BROKER", "").strip()
+    if broker:
+        if ":" in broker:
+            host, port_str = broker.rsplit(":", 1)
+            return host, int(port_str)
+        return broker, 1883
+    host = os.environ.get("MQTT_HOST", "mqtt-broker.truck-fleet.svc")
+    port = int(os.environ.get("MQTT_PORT", "1883"))
+    return host, port
+
+
+MQTT_HOST, MQTT_PORT = _parse_mqtt_broker()
+MQTT_TOPIC = os.environ.get("MQTT_TOPIC_SUBSCRIBE", "fleet/trucks/+/telemetry")
 BOOTSTRAP = os.environ.get(
     "KAFKA_BOOTSTRAP_SERVERS",
     os.environ.get("KAFKA_BOOTSTRAP", "my-cluster-kafka-bootstrap.kafka-demo.svc:9092"),
 )
-TOPIC_TRUCK_TELEMETRY = os.environ.get("KAFKA_TOPIC_TRUCK_TELEMETRY", "fleet.trucks.telemetry")
 TOPIC_CRUSHER_STATE = os.environ.get("KAFKA_TOPIC_CRUSHER_STATE", "fleet.crushers.state")
-CONSUMER_GROUP = os.environ.get("KAFKA_CONSUMER_GROUP", "crusher-fill-bridge")
 VALID_CRUSHERS = frozenset(
     c.strip()
     for c in os.environ.get("VALID_CRUSHERS", "crusher-1,crusher-2").split(",")
@@ -67,11 +81,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _parse_json(raw: bytes | None) -> dict[str, Any] | None:
+def _parse_json(raw: bytes | str | None) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
-        data = json.loads(raw.decode("utf-8"))
+        if isinstance(raw, bytes):
+            data = json.loads(raw.decode("utf-8"))
+        else:
+            data = json.loads(raw)
         return data if isinstance(data, dict) else None
     except json.JSONDecodeError:
         return None
@@ -216,7 +233,9 @@ class CrusherFillBridge:
         self._lock = threading.Lock()
         self._truck_state: dict[str, dict[str, Any]] = {}
         self._producer = self._create_producer()
-        self._consumer = self._create_consumer()
+        self._mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="crusher-fill-bridge")
+        self._mqtt.on_connect = self._on_mqtt_connect
+        self._mqtt.on_message = self._on_mqtt_message
 
     def _create_producer(self) -> KafkaProducer:
         while True:
@@ -234,21 +253,41 @@ class CrusherFillBridge:
                 LOG.warning("Kafka unavailable (%s), retrying in 5s", exc)
                 time.sleep(5)
 
-    def _create_consumer(self) -> KafkaConsumer:
-        while True:
+    def _on_mqtt_connect(
+        self,
+        client: mqtt.Client,
+        userdata: object,
+        flags: dict,
+        reason_code: int,
+        properties: object,
+    ) -> None:
+        del userdata, flags, properties
+        if reason_code == 0:
+            client.subscribe(MQTT_TOPIC, qos=0)
+            LOG.info("Subscribed to MQTT %s on %s:%s", MQTT_TOPIC, MQTT_HOST, MQTT_PORT)
+        else:
+            LOG.error("MQTT connect failed with code %s", reason_code)
+
+    def _on_mqtt_message(
+        self,
+        client: mqtt.Client,
+        userdata: object,
+        msg: mqtt.MQTTMessage,
+    ) -> None:
+        del client, userdata
+        event = _parse_json(msg.payload)
+        if event is None:
+            LOG.warning("Invalid JSON on topic %s", msg.topic)
+            return
+        self._handle_truck_telemetry(event)
+
+    def connect_mqtt(self, running: list[bool]) -> None:
+        while running[0]:
             try:
-                consumer = KafkaConsumer(
-                    TOPIC_TRUCK_TELEMETRY,
-                    bootstrap_servers=BOOTSTRAP.split(","),
-                    group_id=CONSUMER_GROUP,
-                    auto_offset_reset="latest",
-                    enable_auto_commit=True,
-                    value_deserializer=lambda v: v,
-                )
-                LOG.info("Kafka consumer subscribed to %s", TOPIC_TRUCK_TELEMETRY)
-                return consumer
-            except NoBrokersAvailable as exc:
-                LOG.warning("Kafka unavailable (%s), retrying in 5s", exc)
+                self._mqtt.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+                return
+            except OSError as exc:
+                LOG.warning("MQTT connect failed (%s), retrying in 5s", exc)
                 time.sleep(5)
 
     def _publish_crusher_state(self, state: dict[str, Any]) -> None:
@@ -342,24 +381,26 @@ class CrusherFillBridge:
 
     def run(self, running: list[bool]) -> None:
         LOG.info(
-            "Crusher fill bridge started: consume %s → Modbus %s → produce %s",
-            TOPIC_TRUCK_TELEMETRY,
+            "Crusher fill bridge started: MQTT %s:%s topic %s → Modbus %s → produce %s",
+            MQTT_HOST,
+            MQTT_PORT,
+            MQTT_TOPIC,
             ", ".join(sorted(self._targets)),
             TOPIC_CRUSHER_STATE,
         )
         self.publish_all_crusher_state()
+        self.connect_mqtt(running)
+        if not running[0]:
+            return
 
-        for message in self._consumer:
-            if not running[0]:
-                break
-            event = _parse_json(message.value)
-            if event is None:
-                continue
-            if message.topic == TOPIC_TRUCK_TELEMETRY:
-                self._handle_truck_telemetry(event)
-
-        self._consumer.close()
-        self._producer.close()
+        self._mqtt.loop_start()
+        try:
+            while running[0]:
+                time.sleep(1)
+        finally:
+            self._mqtt.loop_stop()
+            self._mqtt.disconnect()
+            self._producer.close()
 
 
 def main() -> None:
