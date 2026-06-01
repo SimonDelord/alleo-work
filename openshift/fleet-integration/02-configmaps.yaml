@@ -6,7 +6,7 @@ metadata:
   name: fleet-integration-env
   namespace: fleet-integration
 data:
-  KAFKA_BOOTSTRAP_SERVERS: "my-cluster-kafka-bootstrap.kafka-demo.svc:9092"
+  KAFKA_BOOTSTRAP_SERVERS: "mining-fleet-cluster-kafka-bootstrap.mining-fleet-kafka.svc:9092"
   KAFKA_TOPIC_TRUCK_TELEMETRY: "fleet.trucks.telemetry"
   KAFKA_TOPIC_CRUSHER_STATE: "fleet.crushers.state"
   KAFKA_TOPIC_ROUTING_COMMANDS: "fleet.routing.commands"

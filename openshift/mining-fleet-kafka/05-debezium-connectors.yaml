@@ -1,0 +1,108 @@
+# Demo connector credentials mirrored into this namespace for Strimzi secret provider access.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: truck-postgres-connect
+  namespace: mining-fleet-kafka
+type: Opaque
+stringData:
+  POSTGRES_USER: "truckfleet"
+  POSTGRES_PASSWORD: "truckfleet-demo"
+  POSTGRES_DB: "truckfleet"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crusher-postgres-connect
+  namespace: mining-fleet-kafka
+type: Opaque
+stringData:
+  POSTGRES_USER: "crusherfleet"
+  POSTGRES_PASSWORD: "crusherfleet-demo"
+  POSTGRES_DB: "crusherfleet"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fleet-cdc-connect-secret-reader
+  namespace: mining-fleet-kafka
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - truck-postgres-connect
+      - crusher-postgres-connect
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fleet-cdc-connect-secret-reader
+  namespace: mining-fleet-kafka
+subjects:
+  - kind: ServiceAccount
+    name: fleet-cdc-connect-connect
+    namespace: mining-fleet-kafka
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fleet-cdc-connect-secret-reader
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnector
+metadata:
+  name: truck-postgres-source
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: fleet-cdc-connect
+spec:
+  class: io.debezium.connector.postgresql.PostgresConnector
+  tasksMax: 1
+  config:
+    database.hostname: postgresql.truck-fleet.svc
+    database.port: 5432
+    database.dbname: truckfleet
+    database.user: truckfleet
+    database.password: ${secrets:mining-fleet-kafka/truck-postgres-connect:POSTGRES_PASSWORD}
+    plugin.name: pgoutput
+    publication.autocreate.mode: filtered
+    publication.name: truckfleet_publication
+    slot.name: truckfleet_debezium_slot
+    table.include.list: public.truck_telemetry,public.truck_state
+    topic.prefix: fleet.truckdb
+    schema.history.internal.kafka.bootstrap.servers: mining-fleet-cluster-kafka-bootstrap:9092
+    schema.history.internal.kafka.topic: fleet.truckdb.schema-history
+    transforms: unwrap
+    transforms.unwrap.type: io.debezium.transforms.ExtractNewRecordState
+    transforms.unwrap.drop.tombstones: "false"
+    transforms.unwrap.delete.handling.mode: rewrite
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnector
+metadata:
+  name: crusher-postgres-source
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: fleet-cdc-connect
+spec:
+  class: io.debezium.connector.postgresql.PostgresConnector
+  tasksMax: 1
+  config:
+    database.hostname: postgresql.crusher-fleet.svc
+    database.port: 5432
+    database.dbname: crusherfleet
+    database.user: crusherfleet
+    database.password: ${secrets:mining-fleet-kafka/crusher-postgres-connect:POSTGRES_PASSWORD}
+    plugin.name: pgoutput
+    publication.autocreate.mode: filtered
+    publication.name: crusherfleet_publication
+    slot.name: crusherfleet_debezium_slot
+    table.include.list: public.crusher_telemetry,public.crusher_state
+    topic.prefix: fleet.crusherdb
+    schema.history.internal.kafka.bootstrap.servers: mining-fleet-cluster-kafka-bootstrap:9092
+    schema.history.internal.kafka.topic: fleet.crusherdb.schema-history
+    transforms: unwrap
+    transforms.unwrap.type: io.debezium.transforms.ExtractNewRecordState
+    transforms.unwrap.drop.tombstones: "false"
+    transforms.unwrap.delete.handling.mode: rewrite

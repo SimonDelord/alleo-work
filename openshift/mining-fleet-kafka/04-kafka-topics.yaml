@@ -1,0 +1,134 @@
+# Fleet orchestration topics in dedicated mining-fleet-kafka namespace.
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-trucks-telemetry
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.trucks.telemetry
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-crushers-state
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.crushers.state
+  partitions: 2
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-routing-commands
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.routing.commands
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-truckdb-schema-history
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.truckdb.schema-history
+  partitions: 1
+  replicas: 3
+  config:
+    cleanup.policy: compact
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-crusherdb-schema-history
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.crusherdb.schema-history
+  partitions: 1
+  replicas: 3
+  config:
+    cleanup.policy: compact
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-truckdb-public-truck-telemetry
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.truckdb.public.truck_telemetry
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-truckdb-public-truck-state
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.truckdb.public.truck_state
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-crusherdb-public-crusher-telemetry
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.crusherdb.public.crusher_telemetry
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: fleet-crusherdb-public-crusher-state
+  namespace: mining-fleet-kafka
+  labels:
+    strimzi.io/cluster: mining-fleet-cluster
+spec:
+  topicName: fleet.crusherdb.public.crusher_state
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2

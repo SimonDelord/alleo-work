@@ -8,7 +8,7 @@ Kafka orchestration for truck destination routing and crusher fill from truck du
 # Prerequisites: truck-fleet + crusher-fleet running; Kafka/AMQ Streams optional (services retry until available)
 oc apply -f openshift/fleet-integration/01-namespace.yaml
 oc apply -f openshift/fleet-integration/02-configmaps.yaml
-oc apply -n kafka-demo -f openshift/fleet-integration/03-kafka-topics.yaml   # skip if no Kafka
+oc apply -f openshift/fleet-integration/03-kafka-topics.yaml   # applies in mining-fleet-kafka namespace
 oc apply -f openshift/fleet-integration/04-buildconfigs.yaml
 oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge \
   -n fleet-integration --wait
@@ -41,7 +41,7 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 |------|---------|
 | `01-namespace.yaml` | `fleet-integration` namespace |
 | `02-configmaps.yaml` | Env ConfigMap + crusher Modbus targets |
-| `03-kafka-topics.yaml` | Strimzi topics `fleet.*` (apply in `kafka-demo`) |
+| `03-kafka-topics.yaml` | Strimzi topics `fleet.*` (apply in `mining-fleet-kafka`) |
 | `04-buildconfigs.yaml` | ImageStreams + BuildConfigs |
 | `05-kafka-truck-bridge.yaml` | MQTT → Kafka telemetry bridge |
 | `06-crusher-state-producer.yaml` | Deprecated mock (replicas=0) |

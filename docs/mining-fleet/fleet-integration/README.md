@@ -195,12 +195,12 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 ## Prerequisites
 
 1. **`truck-fleet`** running (MQTT broker, truck agents, mqtt-ingest).
-2. **Kafka / AMQ Streams** — Strimzi cluster `my-cluster` in namespace `kafka-demo` (or adjust `KAFKA_BOOTSTRAP_SERVERS` in ConfigMap).
+2. **Kafka / AMQ Streams** — dedicated Strimzi cluster `mining-fleet-cluster` in namespace `mining-fleet-kafka` (see `openshift/mining-fleet-kafka/`).
 
 ### Install Kafka topics (when cluster has Strimzi)
 
 ```bash
-oc apply -n kafka-demo -f openshift/fleet-integration/03-kafka-topics.yaml
+oc apply -f openshift/fleet-integration/03-kafka-topics.yaml
 ```
 
 If AMQ Streams is not installed, commit and apply manifests without topics; services will retry until Kafka is available.
@@ -212,7 +212,7 @@ If AMQ Streams is not installed, commit and apply manifests without topics; serv
 ```bash
 oc apply -f openshift/fleet-integration/01-namespace.yaml
 oc apply -f openshift/fleet-integration/02-configmaps.yaml
-oc apply -n kafka-demo -f openshift/fleet-integration/03-kafka-topics.yaml   # if Kafka present
+oc apply -f openshift/fleet-integration/03-kafka-topics.yaml   # if Kafka present
 oc apply -f openshift/fleet-integration/04-buildconfigs.yaml
 oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge \
   -n fleet-integration --wait
@@ -251,7 +251,7 @@ Shared ConfigMap **`fleet-integration-env`**:
 
 | Variable | Default | Used by |
 |----------|---------|---------|
-| `KAFKA_BOOTSTRAP_SERVERS` | `my-cluster-kafka-bootstrap.kafka-demo.svc:9092` | kafka-truck-bridge, crusher-fill-bridge (produce), destination-router, mqtt-routing-bridge |
+| `KAFKA_BOOTSTRAP_SERVERS` | `mining-fleet-cluster-kafka-bootstrap.mining-fleet-kafka.svc:9092` | kafka-truck-bridge, crusher-fill-bridge (produce), destination-router, mqtt-routing-bridge |
 | `KAFKA_TOPIC_TRUCK_TELEMETRY` | `fleet.trucks.telemetry` | kafka-truck-bridge, destination-router |
 | `KAFKA_TOPIC_CRUSHER_STATE` | `fleet.crushers.state` | crusher-fill-bridge, destination-router |
 | `KAFKA_TOPIC_ROUTING_COMMANDS` | `fleet.routing.commands` | destination-router, mqtt-routing-bridge |

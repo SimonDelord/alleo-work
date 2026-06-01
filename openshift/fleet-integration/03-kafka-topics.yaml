@@ -1,14 +1,14 @@
 # Strimzi Kafka topics for fleet orchestration.
-# Requires AMQ Streams / Strimzi cluster "my-cluster" in namespace kafka-demo.
-#   oc apply -n kafka-demo -f openshift/fleet-integration/03-kafka-topics.yaml
+# Requires AMQ Streams / Strimzi cluster "mining-fleet-cluster" in namespace mining-fleet-kafka.
+#   oc apply -f openshift/fleet-integration/03-kafka-topics.yaml
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: fleet-trucks-telemetry
-  namespace: kafka-demo
+  namespace: mining-fleet-kafka
   labels:
-    strimzi.io/cluster: my-cluster
+    strimzi.io/cluster: mining-fleet-cluster
 spec:
   topicName: fleet.trucks.telemetry
   partitions: 3
@@ -21,9 +21,9 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: fleet-crushers-state
-  namespace: kafka-demo
+  namespace: mining-fleet-kafka
   labels:
-    strimzi.io/cluster: my-cluster
+    strimzi.io/cluster: mining-fleet-cluster
 spec:
   topicName: fleet.crushers.state
   partitions: 2
@@ -36,9 +36,9 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: fleet-routing-commands
-  namespace: kafka-demo
+  namespace: mining-fleet-kafka
   labels:
-    strimzi.io/cluster: my-cluster
+    strimzi.io/cluster: mining-fleet-cluster
 spec:
   topicName: fleet.routing.commands
   partitions: 3
