@@ -1,0 +1,15 @@
+apiVersion: console.streamshub.github.com/v1alpha1
+kind: Console
+metadata:
+  name: mining-fleet-console
+  namespace: mining-fleet-kafka
+  labels:
+    app.kubernetes.io/name: mining-fleet-console
+    app.kubernetes.io/part-of: mining-fleet
+    app.kubernetes.io/component: kafka-console
+spec:
+  hostname: mining-fleet-kafka-console.apps.rosa.rosa-g74q8.ybzo.p3.openshiftapps.com
+  kafkaClusters:
+    - name: mining-fleet-cluster
+      namespace: mining-fleet-kafka
+      listener: plain

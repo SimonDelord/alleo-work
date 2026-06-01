@@ -196,6 +196,7 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 
 1. **`truck-fleet`** running (MQTT broker, truck agents, mqtt-ingest).
 2. **Kafka / AMQ Streams** — dedicated Strimzi cluster `mining-fleet-cluster` in namespace `mining-fleet-kafka` (see `openshift/mining-fleet-kafka/`).
+3. Optional but recommended: deploy `openshift/mining-fleet-kafka/06-kafka-console.yaml` to inspect topics, consumer groups, and message flow through the dedicated cluster.
 
 ### Install Kafka topics (when cluster has Strimzi)
 

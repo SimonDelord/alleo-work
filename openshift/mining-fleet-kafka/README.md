@@ -7,6 +7,7 @@ Dedicated AMQ Streams / Strimzi stack for the mining fleet demo, separated from 
 - Namespace: `mining-fleet-kafka`
 - Kafka cluster: `mining-fleet-cluster` (`KafkaNodePool` `mining-fleet-pool`)
 - Kafka Connect: `fleet-cdc-connect`
+- Kafka console: `mining-fleet-console` (Streamshub Console operator)
 - Debezium connectors:
   - `truck-postgres-source` (`postgresql.truck-fleet.svc:5432`, DB `truckfleet`)
   - `crusher-postgres-source` (`postgresql.crusher-fleet.svc:5432`, DB `crusherfleet`)
@@ -23,6 +24,8 @@ oc wait kafkaconnect/fleet-cdc-connect -n mining-fleet-kafka --for=condition=Rea
 
 oc apply -f openshift/mining-fleet-kafka/04-kafka-topics.yaml
 oc apply -f openshift/mining-fleet-kafka/05-debezium-connectors.yaml
+oc apply -f openshift/mining-fleet-kafka/06-kafka-console.yaml
+oc wait console.console.streamshub.github.com/mining-fleet-console -n mining-fleet-kafka --for=condition=Ready --timeout=10m
 oc wait kafkaconnector/truck-postgres-source -n mining-fleet-kafka --for=condition=Ready --timeout=10m
 oc wait kafkaconnector/crusher-postgres-source -n mining-fleet-kafka --for=condition=Ready --timeout=10m
 ```
@@ -34,8 +37,16 @@ oc get ns mining-fleet-kafka
 oc get kafka -n mining-fleet-kafka
 oc get kafkaconnect -n mining-fleet-kafka
 oc get kafkaconnector -n mining-fleet-kafka
+oc get console.console.streamshub.github.com -n mining-fleet-kafka
+oc get route -n mining-fleet-kafka
 oc describe kafkaconnector truck-postgres-source -n mining-fleet-kafka
 oc describe kafkaconnector crusher-postgres-source -n mining-fleet-kafka
+```
+
+Access URL:
+
+```bash
+oc get route -n mining-fleet-kafka -l app.kubernetes.io/name=console -o jsonpath='{.items[0].spec.host}{"\n"}'
 ```
 
 ## Notes
