@@ -6,8 +6,8 @@ registers when trucks dump at a crusher bay.
 Lives in fleet-integration — connects truck-fleet (via MQTT, read-only) to
 crusher-fleet (via Modbus TCP) without direct coupling between those namespaces.
 
-Also publishes fleet.crushers.state after each Modbus update so destination-router
-uses live fill levels instead of the mock crusher-state-producer.
+Also publishes fleet.crushers.state after each Modbus update and on a periodic Modbus
+poll so destination-router and the live map see PLC drain, not just dump events.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ CAPACITY_FILL_PCT = float(os.environ.get("CAPACITY_FILL_PCT", "90"))
 LOAD_DROP_THRESHOLD = float(os.environ.get("LOAD_DROP_THRESHOLD", "5.0"))
 FILL_PER_LOAD_PCT = float(os.environ.get("FILL_PER_LOAD_PCT", "0.12"))
 MODBUS_TIMEOUT_SEC = float(os.environ.get("MODBUS_TIMEOUT_SEC", "5.0"))
+POLL_PUBLISH_INTERVAL_SEC = float(os.environ.get("POLL_PUBLISH_INTERVAL_SEC", os.environ.get("PUBLISH_INTERVAL_SEC", "10")))
 
 # Register indices (must match crusher_plc.py / historian.py)
 REG_FILL_PCT = 0
@@ -394,8 +395,13 @@ class CrusherFillBridge:
             return
 
         self._mqtt.loop_start()
+        last_poll = time.monotonic()
         try:
             while running[0]:
+                now = time.monotonic()
+                if now - last_poll >= POLL_PUBLISH_INTERVAL_SEC:
+                    self.publish_all_crusher_state()
+                    last_poll = now
                 time.sleep(1)
         finally:
             self._mqtt.loop_stop()
