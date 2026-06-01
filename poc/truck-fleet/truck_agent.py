@@ -46,8 +46,8 @@ CRUSHERS = {
     "crusher-1": (800.0, 400.0),
     "crusher-2": (800.0, -400.0),
 }
-HAUL_SPEED_KMH = float(os.environ.get("HAUL_SPEED_KMH", "35"))
-RETURN_SPEED_KMH = float(os.environ.get("RETURN_SPEED_KMH", "40"))
+HAUL_SPEED_KMH = float(os.environ.get("HAUL_SPEED_KMH", "70"))
+RETURN_SPEED_KMH = float(os.environ.get("RETURN_SPEED_KMH", "80"))
 LOAD_RATE_PCT_PER_TICK = float(os.environ.get("LOAD_RATE_PCT_PER_TICK", "25"))
 DUMP_RATE_PCT_PER_TICK = float(os.environ.get("DUMP_RATE_PCT_PER_TICK", "50"))
 LOADING_DWELL_TICKS = int(os.environ.get("LOADING_DWELL_TICKS", "2"))
