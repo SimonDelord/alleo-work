@@ -17,7 +17,7 @@ Parent overview: [../README.md](../README.md).
 
 Trucks bootstrap from **`DEFAULT_CRUSHER`** (env per Pod). Runtime rerouting arrives **only** via MQTT `new-destination/{truck_id}/{crusher_name}`, published by **`mqtt-routing-bridge`** in this namespace.
 
-Crushers do **not** talk MQTT. Crusher state enters Kafka from `crusher-fleet` (Phase 2) or the Phase 1 demo producer here.
+Crushers do **not** talk MQTT. Crusher fill is driven by truck dump events via **`crusher-fill-bridge`**, which writes Modbus registers in `crusher-fleet` and publishes live state to `fleet.crushers.state`.
 
 ---
 
@@ -25,10 +25,15 @@ Crushers do **not** talk MQTT. Crusher state enters Kafka from `crusher-fleet` (
 
 ```text
 truck-fleet (unchanged)          crusher-fleet (unchanged)        water-spray-fleet (unchanged)
-  MQTT telemetry                    Modbus/API → own store           Modbus → own store
-  mqtt-ingest → PostgreSQL          → Kafka (future)                 → Kafka (future)
-       ↓ CDC/ETL                          ↓
-       └──────────────→  fleet-integration / Kafka (AMQ Streams)  ←────────┘
+  MQTT telemetry                    Modbus PLCs (external writes)    Modbus → own store
+  mqtt-ingest → PostgreSQL          historian → PostgreSQL           → Kafka (future)
+       ↓                                   ↑
+       └──────────────→  fleet-integration / Kafka (AMQ Streams)  ←──┘
+                              ↓
+                    kafka-truck-bridge → fleet.trucks.telemetry
+                    crusher-fill-bridge ← fleet.trucks.telemetry
+                         → Modbus writes (crusher-fleet)
+                         → fleet.crushers.state
                               ↓
                     destination-router
                     consumes: fleet.trucks.telemetry, fleet.crushers.state
@@ -38,9 +43,36 @@ truck-fleet (unchanged)          crusher-fleet (unchanged)        water-spray-fl
                     consumes fleet.routing.commands → MQTT new-destination/{truck}/{crusher}
 ```
 
-Phase 1 demo adds **`kafka-truck-bridge`** (MQTT subscribe → Kafka produce) and **`crusher-state-producer`** (mock crusher capacity) because full CDC and crusher-fleet are not deployed yet.
+**`kafka-truck-bridge`** mirrors MQTT truck telemetry to Kafka. **`crusher-fill-bridge`** detects truck dump events and writes crusher Modbus registers (fill increases only when trucks dump). The deprecated **`crusher-state-producer`** mock is replaced by live state from `crusher-fill-bridge`.
 
 ---
+
+## Sequence diagram (truck dump → crusher fill)
+
+```mermaid
+sequenceDiagram
+    participant TR as truck agent (truck-fleet)
+    participant MQTT as mqtt-broker (truck-fleet)
+    participant KTB as kafka-truck-bridge
+    participant K as Kafka
+    participant CFB as crusher-fill-bridge
+    participant PLC as crusher PLC (crusher-fleet)
+    participant H as historian (crusher-fleet)
+    participant PG as PostgreSQL (crusher-fleet)
+    participant DR as destination-router
+
+    TR->>MQTT: fleet/trucks/TR1/telemetry (state=dumping)
+    KTB->>MQTT: subscribe telemetry
+    KTB->>K: fleet.trucks.telemetry
+    CFB->>K: consume truck telemetry
+    CFB->>CFB: detect dump at crusher-1
+    CFB->>PLC: Modbus write fill_pct, dump_count
+    CFB->>K: fleet.crushers.state (live fill)
+    H->>PLC: Modbus poll
+    H->>PG: crusher_state upsert
+    DR->>K: consume crusher state
+    DR->>DR: evaluate reroute if at_capacity
+```
 
 ## Sequence diagram (destination reroute)
 
@@ -50,14 +82,14 @@ sequenceDiagram
     participant MQTT as mqtt-broker (truck-fleet)
     participant KTB as kafka-truck-bridge
     participant K as Kafka
-    participant CSP as crusher-state-producer (demo)
+    participant CSP as crusher-fill-bridge
     participant DR as destination-router
     participant MRB as mqtt-routing-bridge
 
     TR->>MQTT: fleet/trucks/TR1/telemetry
     KTB->>MQTT: subscribe telemetry
     KTB->>K: fleet.trucks.telemetry
-    CSP->>K: fleet.crushers.state (crusher-1 at_capacity)
+    CSP->>K: fleet.crushers.state (live fill from Modbus)
     DR->>K: consume telemetry + crusher state
     DR->>DR: TR1 hauling to crusher-1, crusher-1 full → reroute
     DR->>K: fleet.routing.commands
@@ -93,7 +125,7 @@ Partition key: `truck_id`
 
 ### `fleet.crushers.state`
 
-Produced by: `crusher-state-producer` (Phase 1 demo) or `crusher-fleet` plant-collector (Phase 2).
+Produced by: `crusher-fill-bridge` (writes Modbus after truck dumps, publishes live state).
 
 Partition key: `crusher_name`
 
@@ -106,7 +138,7 @@ Partition key: `crusher_name`
   "max_queue": 3,
   "current_queue": 4,
   "updated_at": "2026-06-01T12:00:00+00:00",
-  "source": "demo-crusher-state-producer"
+  "source": "crusher-fill-bridge"
 }
 ```
 
@@ -130,15 +162,16 @@ MQTT bridge publishes to **`new-destination/{truck_id}/{crusher_name}`** with re
 
 ---
 
-## Routing rule (Phase 1)
+## Routing rule
 
-When a truck is in **`hauling`** or **`loading`** state and its `destination_crusher` is **at capacity** (from `fleet.crushers.state`), `destination-router` emits a command to the first available alternate crusher (`crusher-2` by default).
+When a truck is in **`hauling`** or **`loading`** state and its `destination_crusher` is **at capacity** (from `fleet.crushers.state`, published by `crusher-fill-bridge` after truck dumps fill crushers), `destination-router` emits a command to the first available alternate crusher (`crusher-2` by default).
 
-Edit demo crusher state:
+Crusher fill increases only when trucks dump — watch fill rise in PostgreSQL as trucks cycle:
 
 ```bash
-oc edit configmap demo-crusher-state -n fleet-integration
-# Set crusher-1 at_capacity: true to trigger reroutes
+oc exec -n crusher-fleet deploy/postgresql -- \
+  env PGPASSWORD=crusherfleet-demo psql -U crusherfleet -d crusherfleet \
+  -c "SELECT crusher_id, fill_pct, dump_count, updated_at FROM crusher_state;"
 ```
 
 ---
@@ -155,9 +188,10 @@ oc edit configmap demo-crusher-state -n fleet-integration
 | Service | Role |
 |---------|------|
 | **`kafka-truck-bridge`** | Subscribes `fleet/trucks/+/telemetry` on truck-fleet MQTT → produces `fleet.trucks.telemetry` |
-| **`crusher-state-producer`** | Demo mock → produces `fleet.crushers.state` from ConfigMap |
+| **`crusher-fill-bridge`** | Consumes truck telemetry → writes crusher Modbus on dump events → publishes `fleet.crushers.state` |
 | **`destination-router`** | Consumes telemetry + crusher state → produces `fleet.routing.commands` |
 | **`mqtt-routing-bridge`** | Consumes routing commands → publishes `new-destination/{truck}/{crusher}` to truck-fleet MQTT |
+| **`crusher-state-producer`** | Deprecated mock (replicas=0); replaced by `crusher-fill-bridge` |
 
 ---
 
@@ -183,10 +217,10 @@ oc apply -f openshift/fleet-integration/01-namespace.yaml
 oc apply -f openshift/fleet-integration/02-configmaps.yaml
 oc apply -n kafka-demo -f openshift/fleet-integration/03-kafka-topics.yaml   # if Kafka present
 oc apply -f openshift/fleet-integration/04-buildconfigs.yaml
-oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-state-producer \
+oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge \
   -n fleet-integration --wait
 oc apply -f openshift/fleet-integration/05-kafka-truck-bridge.yaml
-oc apply -f openshift/fleet-integration/06-crusher-state-producer.yaml
+oc apply -f openshift/fleet-integration/09-crusher-fill-bridge.yaml
 oc apply -f openshift/fleet-integration/07-destination-router.yaml
 oc apply -f openshift/fleet-integration/08-mqtt-routing-bridge.yaml
 ```
@@ -222,12 +256,15 @@ Shared ConfigMap **`fleet-integration-env`**:
 |----------|---------|---------|
 | `KAFKA_BOOTSTRAP_SERVERS` | `my-cluster-kafka-bootstrap.kafka-demo.svc:9092` | all |
 | `KAFKA_TOPIC_TRUCK_TELEMETRY` | `fleet.trucks.telemetry` | bridge, router |
-| `KAFKA_TOPIC_CRUSHER_STATE` | `fleet.crushers.state` | producer, router |
+| `KAFKA_TOPIC_CRUSHER_STATE` | `fleet.crushers.state` | crusher-fill-bridge, router |
 | `KAFKA_TOPIC_ROUTING_COMMANDS` | `fleet.routing.commands` | router, mqtt bridge |
 | `MQTT_HOST` | `mqtt-broker.truck-fleet.svc` | kafka-truck-bridge, mqtt-routing-bridge |
 | `MQTT_NEW_DESTINATION_TOPIC` | `new-destination` | mqtt-routing-bridge |
 | `VALID_CRUSHERS` | `crusher-1,crusher-2` | destination-router |
 | `FALLBACK_CRUSHER` | `crusher-2` | destination-router |
+| `CAPACITY_FILL_PCT` | `90` | crusher-fill-bridge |
+| `FILL_PER_LOAD_PCT` | `0.12` | crusher-fill-bridge |
+| `CRUSHER_MODBUS_TARGETS` | ConfigMap `crusher-modbus-targets` | crusher-fill-bridge |
 
 ---
 
@@ -236,7 +273,7 @@ Shared ConfigMap **`fleet-integration-env`**:
 | Phase 1 (demo) | Phase 2 (production-shaped) |
 |----------------|-------------------------------|
 | `kafka-truck-bridge` mirrors MQTT | Debezium CDC from truck PostgreSQL |
-| `crusher-state-producer` mock ConfigMap | `crusher-fleet` plant-collector → Kafka |
+| `crusher-fill-bridge` truck-driven Modbus writes | Same pattern + historian CDC for audit |
 | Simple capacity reroute rule | Queue depth, ETA, maintenance windows |
 | Single `destination-router` | Optional stream processing / Flink |
 

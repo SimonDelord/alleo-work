@@ -8,11 +8,26 @@ This system is **fully independent** from `truck-fleet` and `fleet-integration`:
 - No Kafka (crushers do not publish to topics)
 - No modifications to truck or orchestration code
 
-Phase 2 integration replaces the demo `crusher-state-producer` in `fleet-integration` with a **Kafka CDC/bridge** that reads `crusher_state` from this PostgreSQL and publishes to `fleet.crushers.state`.
+Phase 2 integration replaces the demo `crusher-state-producer` with **`crusher-fill-bridge`**, which writes crusher Modbus registers when trucks dump and publishes live state to `fleet.crushers.state`.
 
 ---
 
 ## Architecture
+
+```text
+truck-fleet                         fleet-integration                    crusher-fleet
+  truck dumps load                    crusher-fill-bridge                  crusher PLCs
+  → MQTT telemetry        → Kafka     consumes fleet.trucks.telemetry    (Modbus TCP)
+  (state=dumping,                     detects dump at crusher-X            HR0=fill_pct
+   load_pct decreasing,               writes Modbus registers              HR4=dump_count
+   destination_crusher)               publishes fleet.crushers.state              ↓
+                                                                               historian polls
+                                                                                    ↓
+                                                                              PostgreSQL
+                                                                              crusher_state
+```
+
+Within `crusher-fleet` namespace only:
 
 ```text
 ┌────────────────────┐         ┌────────────────────┐
@@ -31,6 +46,8 @@ Phase 2 integration replaces the demo `crusher-state-producer` in `fleet-integra
                  │  PostgreSQL   │  crusher_telemetry + crusher_state
                  └───────────────┘
 ```
+
+Fill changes originate in `fleet-integration` (`crusher-fill-bridge`), not inside crusher PLCs.
 
 Compared to the original mining-fleet design (historian → S3 CSV export), this implementation stores data **directly in PostgreSQL** per demo requirements. S3 batch export can be added later as an optional sidecar.
 
@@ -60,14 +77,13 @@ Each crusher PLC exposes **holding registers** starting at address 0 (Modbus fun
 | 2 | `full` | At or above capacity threshold |
 | 3 | `fault` | Fault condition (simulator reserved) |
 
-### PLC simulation behaviour
+### PLC behaviour
 
-`crusher_plc.py` runs a background tick loop that:
+`crusher_plc.py` exposes Modbus TCP holding registers. Fill increases **only** when an external client writes registers (typically `crusher-fill-bridge` in `fleet-integration` after a truck dump event via Kafka). The PLC does **not** simulate truck dumps autonomously.
 
-- Randomly increases fill (simulating truck dumps) and increments `dump_count`
-- Drains fill slowly via processing (`DRAIN_RATE_PCT`)
-- Sets `at_capacity=1` and `status=full` when fill ≥ `CAPACITY_FILL_PCT` (default 90)
-- Sets `ready=0` when full
+Optional slow drain (`DRAIN_RATE_PCT`) simulates ore processing — fill decreases over time but never increases without external Modbus writes.
+
+Default state: empty (`INITIAL_FILL_PCT=0`) until trucks dump via the orchestration layer.
 
 Configure per deployment with `CRUSHER_ID`, `INITIAL_FILL_PCT`, and timing env vars (see `openshift/crusher-fleet/02-configmaps-secrets.yaml`).
 
@@ -155,18 +171,25 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 
 ---
 
-## Independence and Phase 2 integration
+## Independence and orchestration integration
 
 | Concern | crusher-fleet | truck-fleet / fleet-integration |
 |---------|---------------|--------------------------------|
 | Namespace | `crusher-fleet` | `truck-fleet`, `fleet-integration` |
 | Field protocol | Modbus TCP | MQTT (trucks), Kafka (orchestration) |
 | Data store | PostgreSQL (historian) | PostgreSQL (mqtt-ingest) |
-| Northbound handoff | None in Phase 1 | Kafka topics, routing commands |
+| Fill source | External Modbus writes only | `crusher-fill-bridge` writes Modbus after truck dumps |
+| Northbound handoff | Historian → PostgreSQL | `crusher-fill-bridge` → `fleet.crushers.state` |
 
-**Phase 1 (current):** `fleet-integration` uses a mock [`crusher_state_producer`](../../poc/fleet-integration/crusher_state_producer.py) that publishes static YAML config to `fleet.crushers.state`.
+Crushers do **not** subscribe to Kafka or MQTT. Truck dump events flow:
 
-**Phase 2 (planned):** Deploy an optional bridge (Debezium CDC or poll-and-publish service) that reads `crusher_state` from crusher-fleet PostgreSQL and publishes to `fleet.crushers.state`. No changes required inside crusher-fleet workloads.
+1. Truck agent publishes MQTT telemetry (`state=dumping`, `destination_crusher`, decreasing `load_pct`)
+2. `kafka-truck-bridge` produces `fleet.trucks.telemetry`
+3. `crusher-fill-bridge` detects dump events and writes crusher Modbus registers
+4. Historian polls Modbus → PostgreSQL `crusher_state`
+5. `crusher-fill-bridge` also publishes `fleet.crushers.state` for `destination-router`
+
+No direct truck→crusher coupling — connection is only through `fleet-integration`.
 
 ---
 

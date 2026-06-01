@@ -19,8 +19,20 @@ data:
   FALLBACK_CRUSHER: "crusher-2"
   CAPACITY_FILL_PCT: "90"
   PUBLISH_INTERVAL_SEC: "10"
+  LOAD_DROP_THRESHOLD: "5.0"
+  FILL_PER_LOAD_PCT: "0.12"
+  MODBUS_TIMEOUT_SEC: "5.0"
 ---
-# Phase 1 demo: mock crusher capacity (replaced by crusher-fleet Kafka producer).
+# Modbus TCP targets for crusher-fill-bridge (cross-namespace to crusher-fleet Services).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crusher-modbus-targets
+  namespace: fleet-integration
+data:
+  CRUSHER_MODBUS_TARGETS: "crusher-1:crusher-1.crusher-fleet.svc:502,crusher-2:crusher-2.crusher-fleet.svc:502"
+---
+# Deprecated Phase 1 mock — replaced by crusher-fill-bridge publishing live Modbus state.
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -10,7 +10,8 @@ Holding register map (HR0..HR5):
   4  dump_count     cumulative dump counter
   5  ready          0/1     ready to accept material
 
-Simulates fill increasing over time (truck dumps) and draining via throughput.
+Fill increases ONLY via external Modbus writes (from fleet-integration crusher-fill-bridge
+when trucks dump). This PLC optionally drains fill slowly to simulate ore processing.
 Set CRUSHER_ID per deployment (crusher-1, crusher-2).
 """
 
@@ -19,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import random
 
 from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSlaveContext, ModbusServerContext
 from pymodbus.server import StartAsyncTcpServer
@@ -53,22 +53,26 @@ HOST = os.environ.get("MODBUS_HOST", "0.0.0.0")
 PORT = int(os.environ.get("MODBUS_PORT", "5020"))
 TICK_SEC = float(os.environ.get("TICK_SEC", "3.0"))
 CAPACITY_FILL_PCT = int(os.environ.get("CAPACITY_FILL_PCT", "90"))
-FILL_INCREASE_MIN = float(os.environ.get("FILL_INCREASE_MIN", "0.5"))
-FILL_INCREASE_MAX = float(os.environ.get("FILL_INCREASE_MAX", "3.0"))
 DRAIN_RATE_PCT = float(os.environ.get("DRAIN_RATE_PCT", "0.3"))
 BASE_THROUGHPUT_TPH = int(os.environ.get("BASE_THROUGHPUT_TPH", "450"))
-INITIAL_FILL_PCT = float(os.environ.get("INITIAL_FILL_PCT", "25"))
+INITIAL_FILL_PCT = float(os.environ.get("INITIAL_FILL_PCT", "0"))
 
 
-class CrusherSimulator:
+class CrusherPLC:
+    """Modbus register block with optional processing drain — no autonomous fill."""
+
     def __init__(self, block: ModbusSequentialDataBlock) -> None:
         self._block = block
-        self._fill = INITIAL_FILL_PCT
-        self._dump_count = 0
         self._fault = False
 
-    def _write_registers(self) -> None:
-        fill_int = max(0, min(100, int(round(self._fill))))
+    def _read_fill(self) -> float:
+        return float(self._block.getValues(REG_FILL_PCT, 1)[0])
+
+    def _read_dump_count(self) -> int:
+        return int(self._block.getValues(REG_DUMP_COUNT, 1)[0])
+
+    def _write_registers(self, fill: float) -> None:
+        fill_int = max(0, min(100, int(round(fill))))
         at_capacity = 1 if fill_int >= CAPACITY_FILL_PCT else 0
 
         if self._fault:
@@ -88,45 +92,38 @@ class CrusherSimulator:
             ready = 1
             throughput = BASE_THROUGHPUT_TPH
 
+        dump_count = self._read_dump_count()
         self._block.setValues(REG_FILL_PCT, [fill_int])
         self._block.setValues(REG_AT_CAPACITY, [at_capacity])
         self._block.setValues(REG_STATUS, [status])
         self._block.setValues(REG_THROUGHPUT, [throughput])
-        self._block.setValues(REG_DUMP_COUNT, [self._dump_count])
+        self._block.setValues(REG_DUMP_COUNT, [dump_count])
         self._block.setValues(REG_READY, [ready])
 
     async def tick(self) -> None:
-        if self._fault:
-            self._write_registers()
-            return
+        fill = self._read_fill()
+        dump_count = self._read_dump_count()
 
-        # Simulate occasional truck dump (fill increase)
-        if random.random() < 0.35:
-            self._fill += random.uniform(FILL_INCREASE_MIN, FILL_INCREASE_MAX)
-            self._dump_count += 1
+        if not self._fault and fill > 0 and DRAIN_RATE_PCT > 0:
+            fill = max(0.0, fill - DRAIN_RATE_PCT)
 
-        # Processing drains fill proportional to throughput
-        if self._fill > 0:
-            self._fill = max(0.0, self._fill - DRAIN_RATE_PCT)
+        self._write_registers(fill)
 
-        self._fill = min(100.0, self._fill)
-        self._write_registers()
-
-        fill_int = int(round(self._fill))
+        fill_int = int(round(fill))
         status = self._block.getValues(REG_STATUS, 1)[0]
         LOG.info(
             "%s fill=%d%% status=%s dumps=%d throughput=%d tph",
             CRUSHER_ID,
             fill_int,
             STATUS_NAMES.get(status, "unknown"),
-            self._dump_count,
+            dump_count,
             self._block.getValues(REG_THROUGHPUT, 1)[0],
         )
 
 
-async def simulation_loop(sim: CrusherSimulator) -> None:
+async def simulation_loop(plc: CrusherPLC) -> None:
     while True:
-        await sim.tick()
+        await plc.tick()
         await asyncio.sleep(TICK_SEC)
 
 
@@ -134,25 +131,25 @@ async def run() -> None:
     initial = [0] * REGISTER_COUNT
     initial[REG_FILL_PCT] = int(round(INITIAL_FILL_PCT))
     initial[REG_READY] = 1
-    initial[REG_STATUS] = STATUS_ACCEPTING
+    initial[REG_STATUS] = STATUS_EMPTY if INITIAL_FILL_PCT <= 5 else STATUS_ACCEPTING
     initial[REG_THROUGHPUT] = BASE_THROUGHPUT_TPH
 
     block = ModbusSequentialDataBlock(0, initial)
     store = ModbusSlaveContext(hr=block, zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
 
-    sim = CrusherSimulator(block)
-    sim._write_registers()
+    plc = CrusherPLC(block)
+    plc._write_registers(INITIAL_FILL_PCT)
 
     LOG.info(
         "%s Modbus TCP on %s:%s — HR0=fill_pct HR1=at_capacity HR2=status "
-        "HR3=throughput_tph HR4=dump_count HR5=ready",
+        "HR3=throughput_tph HR4=dump_count HR5=ready (fill via external writes only)",
         CRUSHER_ID,
         HOST,
         PORT,
     )
 
-    asyncio.create_task(simulation_loop(sim))
+    asyncio.create_task(simulation_loop(plc))
     await StartAsyncTcpServer(context=context, address=(HOST, PORT))
 
 

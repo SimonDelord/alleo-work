@@ -1,5 +1,5 @@
 # In-cluster builds for fleet-integration.
-# After apply: oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-state-producer -n fleet-integration --wait
+# After apply: oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge -n fleet-integration --wait
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
@@ -106,17 +106,17 @@ spec:
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
-  name: crusher-state-producer
+  name: crusher-fill-bridge
   namespace: fleet-integration
 spec: {}
 ---
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
-  name: crusher-state-producer
+  name: crusher-fill-bridge
   namespace: fleet-integration
   labels:
-    app: crusher-state-producer
+    app: crusher-fill-bridge
 spec:
   failedBuildsHistoryLimit: 3
   successfulBuildsHistoryLimit: 3
@@ -129,10 +129,10 @@ spec:
   strategy:
     type: Docker
     dockerStrategy:
-      dockerfilePath: Dockerfile.crusher-state-producer
+      dockerfilePath: Dockerfile.crusher-fill-bridge
   output:
     to:
       kind: ImageStreamTag
-      name: crusher-state-producer:latest
+      name: crusher-fill-bridge:latest
   triggers:
     - type: ConfigChange

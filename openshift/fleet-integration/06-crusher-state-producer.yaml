@@ -1,4 +1,5 @@
-# Phase 1 demo: publishes mock crusher state to fleet.crushers.state.
+# Deprecated Phase 1 demo: replaced by crusher-fill-bridge publishing live Modbus state.
+# Kept for reference; scaled to 0.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -8,7 +9,7 @@ metadata:
   labels:
     app: crusher-state-producer
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: crusher-state-producer

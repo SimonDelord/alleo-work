@@ -1,0 +1,39 @@
+# Consumes truck telemetry, writes crusher Modbus registers on dump events,
+# publishes live crusher state to fleet.crushers.state for destination-router.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crusher-fill-bridge
+  namespace: fleet-integration
+  labels:
+    app: crusher-fill-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crusher-fill-bridge
+  template:
+    metadata:
+      labels:
+        app: crusher-fill-bridge
+    spec:
+      containers:
+        - name: crusher-fill-bridge
+          image: image-registry.openshift-image-registry.svc:5000/fleet-integration/crusher-fill-bridge:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: fleet-integration-env
+          env:
+            - name: CRUSHER_MODBUS_TARGETS
+              valueFrom:
+                configMapKeyRef:
+                  name: crusher-modbus-targets
+                  key: CRUSHER_MODBUS_TARGETS
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
