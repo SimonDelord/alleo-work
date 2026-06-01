@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY kafka_state.py live_map_server.py ./
+COPY kafka_state.py kafka_commands.py live_map_server.py ./
 COPY static/ static/
 
 ENV LIVE_MAP_PORT=8080
