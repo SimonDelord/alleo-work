@@ -267,6 +267,7 @@ These paths support the patterns above; the full fleet demo workloads may live i
 
 | Path | Relevance |
 |------|-----------|
+| [`DEMO-PODS.md`](DEMO-PODS.md) | **Deployed pod and workload index** for the mining fleet demo on OpenShift |
 | [`poc/modbus/README.md`](../../poc/modbus/README.md) | Modbus PLC sims; **Modbus → Kafka** and **Kafka → Modbus** bridges |
 | [`poc/csv/README.md`](../../poc/csv/README.md) | **S3 CSV upload** and **S3 → Kafka** (crusher export handoff pattern) |
 | [`poc/truck-fleet/README.md`](../../poc/truck-fleet/README.md) | MQTT truck agents + **mqtt-ingest → PostgreSQL** |

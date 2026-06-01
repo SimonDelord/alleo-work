@@ -31,7 +31,7 @@ For the **haul trucks**, **crushers**, and **water sprays** demo (closed namespa
 
 **[`docs/mining-fleet/README.md`](docs/mining-fleet/README.md)**
 
-Pod and workload index for the deployed mining fleet stack: **[`DEMO-PODS.md`](DEMO-PODS.md)**
+Pod and workload index for the deployed mining fleet stack: **[`docs/mining-fleet/DEMO-PODS.md`](docs/mining-fleet/DEMO-PODS.md)**
 
 ## Layout
 
