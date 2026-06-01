@@ -298,10 +298,12 @@
       document.getElementById("gauge-south-val").textContent = sp + "%";
       document.getElementById("gauge-north-val").style.color = crusherColor(np);
       document.getElementById("gauge-south-val").style.color = crusherColor(sp);
+      const northCap = north.at_capacity ? " · AT CAPACITY" : "";
+      const southCap = south.at_capacity ? " · AT CAPACITY" : "";
       document.getElementById("gauge-north-status").textContent =
-        `${north.map_status || "empty"} · ${north.status || "available"}`;
+        `${north.map_status || "empty"} · ${north.status || "available"} · ${north.dump_count ?? 0} dumps${northCap}`;
       document.getElementById("gauge-south-status").textContent =
-        `${south.map_status || "empty"} · ${south.status || "available"}`;
+        `${south.map_status || "empty"} · ${south.status || "available"} · ${south.dump_count ?? 0} dumps${southCap}`;
     }
 
     function cellClass(kind, val) {

@@ -184,6 +184,8 @@ class FleetLiveMapState:
         at_capacity = bool(payload.get("at_capacity", False))
         meta = CRUSHER_SITES[crusher_name]
 
+        dump_count = int(payload.get("dump_count", 0))
+
         with self._lock:
             self._crushers[crusher_name] = {
                 "bay_id": meta["bay_id"],
@@ -195,6 +197,7 @@ class FleetLiveMapState:
                 "map_status": _crusher_map_status(fill_pct),
                 "status_label": _crusher_status_label(status, fill_pct, at_capacity),
                 "at_capacity": at_capacity,
+                "dump_count": dump_count,
                 "updated_at": payload.get("updated_at") or _now_iso(),
             }
             self._last_kafka_message_at = _now_iso()
@@ -304,6 +307,7 @@ class FleetLiveMapState:
             "map_status": "empty",
             "status_label": "GREEN",
             "at_capacity": False,
+            "dump_count": 0,
         }
 
 
