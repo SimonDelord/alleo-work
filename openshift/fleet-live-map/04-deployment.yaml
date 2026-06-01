@@ -1,0 +1,56 @@
+# Kafka-backed live map dashboard — observability/UI layer in fleet-live-map namespace.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-live-map
+  namespace: fleet-live-map
+  labels:
+    app: fleet-live-map
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fleet-live-map
+  template:
+    metadata:
+      labels:
+        app: fleet-live-map
+    spec:
+      containers:
+        - name: live-map
+          image: image-registry.openshift-image-registry.svc:5000/fleet-live-map/fleet-live-map:latest
+          imagePullPolicy: Always
+          command: ["python", "live_map_server.py"]
+          envFrom:
+            - configMapRef:
+                name: fleet-live-map-env
+          env:
+            - name: LIVE_MAP_PORT
+              value: "8080"
+            - name: LIVE_MAP_TRAIL_MAX_POINTS
+              value: "500"
+            - name: LIVE_MAP_EXCEPTION_LIMIT
+              value: "20"
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi

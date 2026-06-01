@@ -1,0 +1,15 @@
+# Kafka consumer env for the live map dashboard (read-only observability layer).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-live-map-env
+  namespace: fleet-live-map
+  labels:
+    app: fleet-live-map
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "mining-fleet-cluster-kafka-bootstrap.mining-fleet-kafka.svc:9092"
+  KAFKA_TOPIC_TRUCK_TELEMETRY: "fleet.trucks.telemetry"
+  KAFKA_TOPIC_CRUSHER_STATE: "fleet.crushers.state"
+  KAFKA_TOPIC_ROUTING_COMMANDS: "fleet.routing.commands"
+  KAFKA_CONSUMER_GROUP: "fleet-live-map"

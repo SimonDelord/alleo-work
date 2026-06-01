@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mine Operations — Trucks & Crushers</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --panel2: #243044;
+      --border: #2d3a4d;
+      --text: #e8eef5;
+      --muted: #8b9cb3;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --orange: #f97316;
+      --blue: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; }
+    header .sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .live-badge {
+      font-size: 0.75rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse { 50% { opacity: 0.35; } }
+
+    .top-row {
+      display: grid;
+      grid-template-columns: 200px 200px 1fr;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #121820;
+      border-bottom: 1px solid var(--border);
+    }
+    @media (max-width: 1100px) {
+      .top-row { grid-template-columns: 1fr 1fr; }
+      .routing-panel { grid-column: 1 / -1; }
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .panel-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .gauge-wrap { text-align: center; }
+    .gauge-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+    .gauge-svg { width: 100%; max-width: 160px; margin: 0 auto; display: block; }
+    .gauge-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: -28px;
+      margin-bottom: 4px;
+    }
+    .gauge-status { font-size: 0.75rem; color: var(--muted); }
+
+    .routing-panel { overflow: auto; max-height: 200px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; }
+    .cell-green { background: rgba(34, 197, 94, 0.25); color: #86efac; }
+    .cell-red { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
+    .cell-orange { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
+
+    .map-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 420px;
+    }
+    .map-header {
+      padding: 8px 16px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .legend i {
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    }
+    #map { flex: 1; min-height: 360px; }
+
+    .bottom-row {
+      padding: 12px 16px 16px;
+      background: #121820;
+    }
+    .bottom-row .panel { max-height: 220px; overflow: auto; }
+    .exc-time { color: var(--muted); white-space: nowrap; font-size: 0.72rem; }
+
+    .truck-label {
+      background: rgba(15, 20, 25, 0.9);
+      color: #fff;
+      border: 2px solid var(--blue);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-weight: 600;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="dash-title">Mine Operations — Trucks & Crushers</h1>
+      <div class="sub">Real-time view from mining-fleet-kafka: truck telemetry, crusher state, routing commands</div>
+    </div>
+    <div class="live-badge"><span class="dot"></span><span id="freshness">Connecting…</span></div>
+  </header>
+
+  <section class="top-row">
+    <div class="panel gauge-wrap" id="gauge-north-panel">
+      <div class="panel-title">Crusher status</div>
+      <div class="gauge-title">Crusher North</div>
+      <svg class="gauge-svg" viewBox="0 0 120 70" id="gauge-north"></svg>
+      <div class="gauge-value" id="gauge-north-val">0%</div>
+      <div class="gauge-status" id="gauge-north-status">empty</div>
+    </div>
+    <div class="panel gauge-wrap" id="gauge-south-panel">
+      <div class="gauge-title">Crusher South</div>
+      <svg class="gauge-svg" viewBox="0 0 120 70" id="gauge-south"></svg>
+      <div class="gauge-value" id="gauge-south-val">0%</div>
+      <div class="gauge-status" id="gauge-south-status">empty</div>
+    </div>
+    <div class="panel routing-panel">
+      <div class="panel-title">Active routing / re-routing</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Truck</th>
+            <th>Mission</th>
+            <th>Target</th>
+            <th>Payload</th>
+            <th>Crusher fill</th>
+            <th>Crusher</th>
+            <th>Overload</th>
+          </tr>
+        </thead>
+        <tbody id="routing-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="map-section">
+    <div class="map-header">
+      <strong>Mine site map</strong>
+      <div class="legend">
+        <span><i style="background:var(--blue)"></i> Loading area</span>
+        <span><i style="background:var(--green)"></i> Crusher empty</span>
+        <span><i style="background:var(--yellow)"></i> Crusher partial</span>
+        <span><i style="background:var(--red)"></i> Crusher full</span>
+        <span><i style="background:#94a3b8"></i> Truck waiting</span>
+        <span><i style="background:var(--green)"></i> Truck empty</span>
+        <span><i style="background:var(--orange)"></i> Truck full</span>
+        <span><i style="background:var(--blue)"></i> Dumping</span>
+        <span>— — Route line</span>
+      </div>
+    </div>
+    <div id="map"></div>
+  </section>
+
+  <section class="bottom-row">
+    <div class="panel">
+      <div class="panel-title">Controller exceptions (automated re-route signals)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Truck</th>
+            <th>Bay</th>
+            <th>Severity</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody id="exceptions-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const POLL_MS = 500;
+
+    const LOADING = [-23.360, 119.710];
+    const NORTH = [-23.350, 119.720];
+    const SOUTH = [-23.365, 119.735];
+
+    const map = L.map("map", { zoomControl: true }).setView([-23.357, 119.722], 14);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap",
+    }).addTo(map);
+
+    const roadStyle = { color: "#64748b", weight: 3, opacity: 0.55, dashArray: "10,10" };
+    L.polyline([LOADING, NORTH], roadStyle).bindTooltip("Loading → North").addTo(map);
+    L.polyline([NORTH, SOUTH], roadStyle).bindTooltip("North → South").addTo(map);
+    L.polyline([SOUTH, LOADING], roadStyle).bindTooltip("South → Loading").addTo(map);
+
+    const siteLayers = L.layerGroup().addTo(map);
+    const crusherLayers = L.layerGroup().addTo(map);
+    const trailLayers = L.layerGroup().addTo(map);
+    const routeLayers = L.layerGroup().addTo(map);
+    const truckLayers = L.layerGroup().addTo(map);
+    const truckMarkers = {};
+    const truckTrails = {};
+    const smoothPos = {};
+    const truckTargets = {};
+
+    const crusherColor = (pct) => {
+      if (pct >= 100) return "#ef4444";
+      if (pct >= 50) return "#eab308";
+      return "#22c55e";
+    };
+
+    const truckColor = (t) => {
+      const loadState = t.load_state || t.mission_state;
+      if (loadState === "dumping") return "#3b82f6";
+      if (loadState === "waiting") return "#94a3b8";
+      if (t.payload_state === "full" || loadState === "full") return "#f97316";
+      return "#22c55e";
+    };
+
+    function drawGauge(svgId, pct) {
+      const col = crusherColor(pct);
+      const angle = Math.PI + (pct / 100) * Math.PI;
+      const cx = 60, cy = 58, r = 48;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      const large = pct > 50 ? 1 : 0;
+      const el = document.getElementById(svgId);
+      el.innerHTML = `
+        <path d="M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}"
+          fill="none" stroke="#374151" stroke-width="10" stroke-linecap="round"/>
+        <path d="M ${cx - r} ${cy} A ${r} ${r} 0 ${large} 1 ${x} ${y}"
+          fill="none" stroke="${col}" stroke-width="10" stroke-linecap="round"/>
+      `;
+      return col;
+    }
+
+    function updateGauges(data) {
+      const north = data.crusher_north || { fill_pct: 0, status: "available", map_status: "empty" };
+      const south = data.crusher_south || { fill_pct: 0, status: "available", map_status: "empty" };
+      const np = north.fill_pct ?? 0;
+      const sp = south.fill_pct ?? 0;
+      drawGauge("gauge-north", np);
+      drawGauge("gauge-south", sp);
+      document.getElementById("gauge-north-val").textContent = np + "%";
+      document.getElementById("gauge-south-val").textContent = sp + "%";
+      document.getElementById("gauge-north-val").style.color = crusherColor(np);
+      document.getElementById("gauge-south-val").style.color = crusherColor(sp);
+      document.getElementById("gauge-north-status").textContent =
+        `${north.map_status || "empty"} · ${north.status || "available"}`;
+      document.getElementById("gauge-south-status").textContent =
+        `${south.map_status || "empty"} · ${south.status || "available"}`;
+    }
+
+    function cellClass(kind, val) {
+      if (kind === "crusher") return val === "RED" ? "cell-red" : "cell-green";
+      if (kind === "overload") return val === "OVERLOAD" ? "cell-red" : "cell-green";
+      return "";
+    }
+
+    function updateRouting(rows) {
+      const body = document.getElementById("routing-body");
+      if (!rows.length) {
+        body.innerHTML = "<tr><td colspan='7'>No trucks</td></tr>";
+        return;
+      }
+      body.innerHTML = rows.map((r) => `
+        <tr>
+          <td><strong>${r.truck}</strong></td>
+          <td>${r.mission || "—"}</td>
+          <td>${r.target_site || "—"}</td>
+          <td>${r.payload || "—"}</td>
+          <td>${r.crusher_fill || "0%"}</td>
+          <td class="${cellClass("crusher", r.crusher_status)}">${r.crusher_status || "—"}</td>
+          <td class="${cellClass("overload", r.overload)}">${r.overload || "OK"}</td>
+        </tr>
+      `).join("");
+    }
+
+    function updateExceptions(rows) {
+      const body = document.getElementById("exceptions-body");
+      if (!rows.length) {
+        body.innerHTML = "<tr><td colspan='5'>No exceptions yet</td></tr>";
+        return;
+      }
+      body.innerHTML = rows.map((e) => {
+        const t = e.created_at ? new Date(e.created_at).toLocaleTimeString() : "—";
+        return `<tr>
+          <td class="exc-time">${t}</td>
+          <td>${e.truck_id || "—"}</td>
+          <td>${e.bay_id || "—"}</td>
+          <td class="${e.severity === "warning" ? "cell-orange" : ""}">${e.severity}</td>
+          <td>${e.message}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function drawSites(sites) {
+      siteLayers.clearLayers();
+      (sites || []).filter((s) => s.site_type === "loading").forEach((s) => {
+        L.circleMarker([s.lat, s.lon], {
+          radius: 16, color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.3, weight: 3,
+        }).bindPopup(`<b>${s.name}</b><br/>All trucks start here`).addTo(siteLayers);
+        L.marker([s.lat, s.lon], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="truck-label" style="border-color:#3b82f6">${s.name}</div>`,
+            iconSize: [110, 20], iconAnchor: [55, -10],
+          }),
+        }).addTo(siteLayers);
+      });
+    }
+
+    function drawCrushers(crushers) {
+      crusherLayers.clearLayers();
+      (crushers || []).forEach((c) => {
+        const pct = c.fill_pct ?? 0;
+        const col = crusherColor(pct);
+        const label = `${c.name} ${pct}%`;
+        L.circleMarker([c.lat, c.lon], {
+          radius: 14, color: col, fillColor: col, fillOpacity: 0.9, weight: 2,
+        }).bindPopup(`<b>${c.name}</b><br/>Fill: ${pct}%<br/>Status: ${c.map_status}`).addTo(crusherLayers);
+        L.marker([c.lat, c.lon], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="truck-label" style="border-color:${col}">${label}</div>`,
+            iconSize: [130, 20], iconAnchor: [65, -12],
+          }),
+        }).addTo(crusherLayers);
+      });
+    }
+
+    function setTargets(trucks) {
+      (trucks || []).forEach((t) => {
+        truckTargets[t.truck_id] = t;
+        if (!smoothPos[t.truck_id]) {
+          smoothPos[t.truck_id] = { lat: t.lat, lon: t.lon };
+        }
+      });
+    }
+
+    function getDisplayLatLng(id) {
+      const tgt = truckTargets[id];
+      const s = smoothPos[id];
+      if (!tgt || !s) return null;
+      return [s.lat, s.lon];
+    }
+
+    function animateMarkers() {
+      for (const id of Object.keys(truckMarkers)) {
+        const tgt = truckTargets[id];
+        const s = smoothPos[id];
+        if (!tgt || !s) continue;
+        s.lat += (tgt.lat - s.lat) * 0.12;
+        s.lon += (tgt.lon - s.lon) * 0.12;
+        const ll = [s.lat, s.lon];
+        truckMarkers[id].setLatLng(ll);
+        if (truckMarkers[id]._label) truckMarkers[id]._label.setLatLng(ll);
+      }
+      requestAnimationFrame(animateMarkers);
+    }
+    requestAnimationFrame(animateMarkers);
+
+    function drawTrucks(trucks) {
+      routeLayers.clearLayers();
+      (trucks || []).forEach((t) => {
+        const id = t.truck_id;
+        const latlng = getDisplayLatLng(id) || [t.lat, t.lon];
+        const color = truckColor(t);
+
+        if (!truckMarkers[id]) {
+          truckMarkers[id] = L.circleMarker(latlng, {
+            radius: 10, color: "#fff", fillColor: color, fillOpacity: 1, weight: 2,
+          }).addTo(truckLayers);
+          truckMarkers[id].bindPopup(
+            () => `<b>${t.display_name}</b><br/>${t.load_state}<br/>${t.mission_state}<br/>→ ${t.target_site_name || "—"}`
+          );
+        } else {
+          truckMarkers[id].setLatLng(latlng);
+          truckMarkers[id].setStyle({ fillColor: color });
+        }
+
+        const lbl = L.marker(latlng, {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="truck-label" style="border-color:${color}">${t.display_name}</div>`,
+            iconSize: [36, 18], iconAnchor: [18, 30],
+          }),
+          interactive: false,
+        });
+        if (truckMarkers[id]._label) truckLayers.removeLayer(truckMarkers[id]._label);
+        lbl.addTo(truckLayers);
+        truckMarkers[id]._label = lbl;
+
+        if (t.target_lat != null && ["en_route", "returning"].includes(t.route_phase)) {
+          L.polyline([latlng, [t.target_lat, t.target_lon]], {
+            color: "#facc15", weight: 3, opacity: 0.9, dashArray: "8,6",
+          }).addTo(routeLayers);
+        }
+
+        const trail = t.trail || [];
+        if (trail.length >= 2) {
+          if (truckTrails[id]) trailLayers.removeLayer(truckTrails[id]);
+          truckTrails[id] = L.polyline(trail, { color, weight: 4, opacity: 0.6 }).addTo(trailLayers);
+        }
+      });
+    }
+
+    async function tick() {
+      try {
+        const res = await fetch("/api/state", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        if (data.dashboard_title) {
+          document.getElementById("dash-title").textContent = data.dashboard_title;
+        }
+
+        updateGauges(data);
+        updateRouting(data.routing || []);
+        updateExceptions(data.exceptions || []);
+        drawSites(data.sites || []);
+        drawCrushers(data.crushers || []);
+        setTargets(data.trucks || []);
+        drawTrucks(data.trucks || []);
+
+        document.getElementById("freshness").textContent =
+          `${data.kafka_connected === false ? "Kafka reconnecting · " : "Live · "}${POLL_MS}ms refresh · ${(data.trucks || []).length} trucks`;
+      } catch (err) {
+        document.getElementById("freshness").textContent = `Error: ${err.message}`;
+      }
+    }
+
+    tick();
+    setInterval(tick, POLL_MS);
+  </script>
+</body>
+</html>

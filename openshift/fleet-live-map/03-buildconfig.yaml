@@ -1,0 +1,38 @@
+# In-cluster build for fleet-live-map (Kafka → JSON API + Leaflet UI).
+# After apply: oc start-build fleet-live-map -n fleet-live-map --wait
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: fleet-live-map
+  namespace: fleet-live-map
+  labels:
+    app: fleet-live-map
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: fleet-live-map
+  namespace: fleet-live-map
+  labels:
+    app: fleet-live-map
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/mining-fleet-live-map
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: fleet-live-map:latest
+  triggers:
+    - type: ConfigChange

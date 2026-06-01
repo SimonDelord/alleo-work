@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleet-live-map
+  namespace: fleet-live-map
+  labels:
+    app: fleet-live-map
+spec:
+  selector:
+    app: fleet-live-map
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: fleet-live-map
+  namespace: fleet-live-map
+  labels:
+    app: fleet-live-map
+spec:
+  host: mining-fleet-live-map.apps.rosa.rosa-g74q8.ybzo.p3.openshiftapps.com
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+  to:
+    kind: Service
+    name: fleet-live-map
