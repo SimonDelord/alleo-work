@@ -112,6 +112,21 @@ class KafkaCommandProducer:
             self._send(TOPIC_TRUCK_COMMANDS, truck_id, command)
             return {"status": "ok", "action": action, "published": command}
 
+        if action == "clear_fleet":
+            published = []
+            reason = str(body.get("reason", "manual_resume_fleet"))
+            for truck_id in sorted(KNOWN_TRUCKS):
+                command = {
+                    "truck_id": truck_id,
+                    "action": "clear",
+                    "reason": reason,
+                    "decided_at": _now_iso(),
+                    "source": "fleet-live-map",
+                }
+                self._send(TOPIC_TRUCK_COMMANDS, truck_id, command)
+                published.append(command)
+            return {"status": "ok", "action": action, "published": published}
+
         if action == "stop_fleet":
             published = []
             reason = str(body.get("reason", "manual_stop_fleet"))
@@ -143,7 +158,7 @@ class KafkaCommandProducer:
             return {"status": "ok", "action": action, "published": published}
 
         raise ValueError(
-            "unsupported action; use reroute, stop, resume, stop_fleet, resume_fleet, or acknowledge"
+            "unsupported action; use reroute, stop, resume, stop_fleet, resume_fleet, clear_fleet, or acknowledge"
         )
 
     def close(self) -> None:

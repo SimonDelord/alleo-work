@@ -107,11 +107,11 @@ class MqttRoutingBridge:
     def publish_truck_command(self, command: dict[str, Any]) -> None:
         truck_id = str(command.get("truck_id", ""))
         action = str(command.get("action", "")).lower()
-        if not truck_id or action not in ("stop", "resume"):
+        if not truck_id or action not in ("stop", "resume", "clear"):
             LOG.warning("Ignoring invalid truck command: %s", command)
             return
 
-        if self._last_published_action.get(truck_id) == action and action != "resume":
+        if self._last_published_action.get(truck_id) == action and action not in ("resume", "clear"):
             LOG.debug("Already published %s action=%s, skipping", truck_id, action)
             return
 

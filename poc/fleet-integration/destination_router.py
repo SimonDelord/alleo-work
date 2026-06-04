@@ -47,6 +47,7 @@ HAULING_STATES = frozenset(
     if s.strip()
 )
 STOP_REASON = os.environ.get("FLEET_STOP_REASON", "both_crushers_at_capacity")
+MANUAL_STOP_PREFIX = "manual"
 
 
 def _now_iso() -> str:
@@ -70,6 +71,7 @@ class DestinationRouter:
         self._crushers: dict[str, dict[str, Any]] = {}
         self._last_routing_command: dict[str, str] = {}
         self._stopped_by_router: set[str] = set()
+        self._manual_haul_hold: set[str] = set()
         self._last_truck_action: dict[str, str] = {}
         self._producer = self._create_producer()
         self._consumer = self._create_consumer()
@@ -98,6 +100,7 @@ class DestinationRouter:
                 consumer = KafkaConsumer(
                     TOPIC_TRUCK_TELEMETRY,
                     TOPIC_CRUSHER_STATE,
+                    TOPIC_TRUCK_COMMANDS,
                     bootstrap_servers=BOOTSTRAP.split(","),
                     group_id=CONSUMER_GROUP,
                     auto_offset_reset="latest",
@@ -105,9 +108,10 @@ class DestinationRouter:
                     value_deserializer=lambda v: v,
                 )
                 LOG.info(
-                    "Kafka consumer subscribed to %s, %s",
+                    "Kafka consumer subscribed to %s, %s, %s",
                     TOPIC_TRUCK_TELEMETRY,
                     TOPIC_CRUSHER_STATE,
+                    TOPIC_TRUCK_COMMANDS,
                 )
                 return consumer
             except NoBrokersAvailable as exc:
@@ -126,8 +130,15 @@ class DestinationRouter:
                 "state": str(event.get("state", "unknown")),
                 "destination_crusher": str(event.get("destination_crusher", "")),
                 "load_pct": float(event.get("load_pct", 0)),
+                "stop_reason": str(event.get("stop_reason", "")),
+                "haul_hold": bool(event.get("haul_hold", False)),
                 "updated_at": event.get("timestamp") or _now_iso(),
             }
+            state = str(event.get("state", "unknown"))
+            if state != "stopped":
+                self._stopped_by_router.discard(truck_id)
+                if not bool(event.get("haul_hold", False)):
+                    self._manual_haul_hold.discard(truck_id)
 
     def _update_crusher(self, event: dict[str, Any]) -> None:
         crusher_name = str(event.get("crusher_name") or event.get("crusher_id") or "")
@@ -220,6 +231,37 @@ class DestinationRouter:
         self._producer.flush(timeout=5)
         LOG.info("Truck command: %s action=%s (reason=%s)", truck_id, action, reason)
 
+    def _is_manual_haul_hold(self, truck_id: str) -> bool:
+        with self._lock:
+            if truck_id in self._manual_haul_hold:
+                return True
+            truck = self._trucks.get(truck_id)
+            if truck is None:
+                return False
+            stop_reason = str(truck.get("stop_reason", ""))
+            return stop_reason.startswith(MANUAL_STOP_PREFIX) or bool(truck.get("haul_hold"))
+
+    def _handle_truck_command(self, event: dict[str, Any]) -> None:
+        source = str(event.get("source", ""))
+        if source == "destination-router":
+            return
+
+        truck_id = str(event.get("truck_id", ""))
+        if not truck_id:
+            return
+
+        action = str(event.get("action", "")).lower()
+        reason = str(event.get("reason", ""))
+
+        with self._lock:
+            if action == "stop" and reason.startswith(MANUAL_STOP_PREFIX):
+                self._manual_haul_hold.add(truck_id)
+                self._stopped_by_router.discard(truck_id)
+                LOG.info("Manual haul hold recorded for %s (reason=%s)", truck_id, reason)
+            elif action in ("resume", "clear") and reason.startswith(MANUAL_STOP_PREFIX):
+                self._manual_haul_hold.discard(truck_id)
+                LOG.info("Manual haul hold cleared for %s (reason=%s)", truck_id, reason)
+
     def _evaluate_fleet_stop(self) -> None:
         if self._all_crushers_at_capacity():
             with self._lock:
@@ -241,6 +283,11 @@ class DestinationRouter:
             if truck is None:
                 continue
             if str(truck.get("state", "")) == "stopped":
+                if self._is_manual_haul_hold(truck_id):
+                    continue
+                with self._lock:
+                    if truck_id not in self._stopped_by_router:
+                        continue
                 self._emit_truck_command(truck_id, "resume", "crusher_capacity_available")
 
     def _evaluate_truck(self, truck_id: str) -> None:
@@ -294,9 +341,10 @@ class DestinationRouter:
 
     def run(self, running: list[bool]) -> None:
         LOG.info(
-            "Destination router started: consume [%s, %s] → produce %s, %s",
+            "Destination router started: consume [%s, %s, %s] → produce %s, %s",
             TOPIC_TRUCK_TELEMETRY,
             TOPIC_CRUSHER_STATE,
+            TOPIC_TRUCK_COMMANDS,
             TOPIC_ROUTING_COMMANDS,
             TOPIC_TRUCK_COMMANDS,
         )
@@ -310,6 +358,8 @@ class DestinationRouter:
                 self._handle_truck_telemetry(event)
             elif message.topic == TOPIC_CRUSHER_STATE:
                 self._handle_crusher_state(event)
+            elif message.topic == TOPIC_TRUCK_COMMANDS:
+                self._handle_truck_command(event)
 
         self._consumer.close()
         self._producer.close()

@@ -74,6 +74,7 @@ class SimState:
     assignment_source: str = "bootstrap"
     paused_from_state: TruckState | None = None
     stop_reason: str | None = None
+    haul_hold: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
@@ -147,16 +148,34 @@ def _handle_truck_command(sim: SimState, payload: dict | None) -> None:
         if action == "stop":
             if sim.state == TruckState.STOPPED:
                 return
-            sim.paused_from_state = sim.state
+            if sim.state != TruckState.HAULING:
+                LOG.debug(
+                    "Ignoring stop while %s (only hauling trucks can be held)",
+                    sim.state.value,
+                )
+                return
+            sim.paused_from_state = TruckState.HAULING
             sim.state = TruckState.STOPPED
+            sim.haul_hold = reason.startswith("manual")
             sim.stop_reason = reason
-            LOG.info("Stopped (was %s, reason=%s)", sim.paused_from_state.value, reason)
-        elif action == "resume":
+            LOG.info(
+                "Haul hold (reason=%s, manual=%s)",
+                reason,
+                sim.haul_hold,
+            )
+        elif action in ("resume", "clear"):
             if sim.state != TruckState.STOPPED:
+                return
+            if sim.haul_hold and not reason.startswith("manual"):
+                LOG.info(
+                    "Ignoring auto-resume while manual haul hold active (reason=%s)",
+                    reason,
+                )
                 return
             resume_state = sim.paused_from_state or TruckState.HAULING
             sim.state = resume_state
             sim.paused_from_state = None
+            sim.haul_hold = False
             sim.stop_reason = None
             LOG.info("Resumed to %s (reason=%s)", resume_state.value, reason)
         else:
@@ -267,6 +286,8 @@ def _telemetry_payload(sim: SimState) -> dict:
             payload["paused_from_state"] = sim.paused_from_state.value
         if sim.stop_reason:
             payload["stop_reason"] = sim.stop_reason
+        if sim.haul_hold:
+            payload["haul_hold"] = True
         return payload
 
 
