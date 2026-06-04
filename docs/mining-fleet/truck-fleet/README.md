@@ -26,7 +26,8 @@ Parent overview: [../README.md](../README.md). Destination routing is handled by
                                                    │ PostgreSQL  │
                                                    └─────────────┘
 
-new-destination/* published by fleet-integration/mqtt-routing-bridge (cross-namespace)
+new-destination/* published by fleet-integration (mqtt-routing-bridge for reroutes,
+crusher-capacity-monitor for resume assignments)
 ```
 
 Everything runs in namespace **`truck-fleet`**. External consumers should read **PostgreSQL** (or a future HTTP/API gateway), not raw MQTT from outside the namespace.
@@ -82,6 +83,16 @@ Each truck agent (`poc/truck-fleet/truck_agent.py`) cycles through four states o
 
 Crushers are coordinate targets in telemetry only (`crusher-1`, `crusher-2`); crusher Pods are a separate ecosystem (`crusher-fleet`).
 
+### Stop / resume (haul hold)
+
+While **hauling**, trucks accept **stop** commands on `fleet/trucks/{truck_id}/command`. Stops with reason `manual_*` set **`haul_hold=true`** (live map operator hold) and require a manual **resume**/`clear`. Capacity stops (`both_crushers_at_capacity`) and orchestration resume (`crusher_below_50pct` from **crusher-capacity-monitor**) do not set manual haul hold.
+
+Example resume payload from capacity monitor:
+
+```json
+{"action":"resume","truck_id":"TR1","reason":"crusher_below_50pct","crusher_name":"crusher-2","source":"crusher-capacity-monitor"}
+```
+
 ---
 
 ## MQTT topic design
@@ -89,7 +100,8 @@ Crushers are coordinate targets in telemetry only (`crusher-1`, `crusher-2`); cr
 | Topic | Publisher | Subscriber | Payload |
 |-------|-----------|------------|---------|
 | `fleet/trucks/{truck_id}/telemetry` | Truck agent | mqtt-ingest | JSON telemetry (see below) |
-| `new-destination/{truck_id}/{crusher_name}` | fleet-integration mqtt-routing-bridge | Per-truck agent | JSON metadata (retained, QoS 1) |
+| `new-destination/{truck_id}/{crusher_name}` | fleet-integration (mqtt-routing-bridge, crusher-capacity-monitor) | Per-truck agent | JSON metadata (retained, QoS 1) |
+| `fleet/trucks/{truck_id}/command` | fleet-integration (mqtt-routing-bridge, crusher-capacity-monitor) | Per-truck agent | JSON stop/resume (QoS 1) |
 
 Trucks subscribe to **`new-destination/{TRUCK_ID}/+`**. The crusher name is taken from the topic path; the JSON payload is optional metadata.
 

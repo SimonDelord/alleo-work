@@ -166,6 +166,8 @@ def _handle_truck_command(sim: SimState, payload: dict | None) -> None:
         elif action in ("resume", "clear"):
             if sim.state != TruckState.STOPPED:
                 return
+            # Manual haul_hold (live map) requires manual clear; orchestration resume (e.g.
+            # crusher_below_50pct from crusher-capacity-monitor) clears capacity holds only.
             if sim.haul_hold and not reason.startswith("manual"):
                 LOG.info(
                     "Ignoring auto-resume while manual haul hold active (reason=%s)",

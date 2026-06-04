@@ -27,6 +27,8 @@ data:
   FILL_PER_LOAD_PCT: "0.12"
   POLL_PUBLISH_INTERVAL_SEC: "5"
   MODBUS_TIMEOUT_SEC: "5.0"
+  CRUSHER_RESUME_THRESHOLD_PCT: "50"
+  CRUSHER_RESUME_REASON: "crusher_below_50pct"
 ---
 # Modbus TCP targets for crusher-fill-bridge (cross-namespace to crusher-fleet Services).
 apiVersion: v1

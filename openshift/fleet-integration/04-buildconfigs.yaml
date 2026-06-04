@@ -1,5 +1,5 @@
 # In-cluster builds for fleet-integration.
-# After apply: oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge -n fleet-integration --wait
+# After apply: oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge crusher-capacity-monitor -n fleet-integration --wait
 ---
 apiVersion: image.openshift.io/v1
 kind: ImageStream
@@ -134,5 +134,39 @@ spec:
     to:
       kind: ImageStreamTag
       name: crusher-fill-bridge:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: crusher-capacity-monitor
+  namespace: fleet-integration
+spec: {}
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: crusher-capacity-monitor
+  namespace: fleet-integration
+  labels:
+    app: crusher-capacity-monitor
+spec:
+  failedBuildsHistoryLimit: 3
+  successfulBuildsHistoryLimit: 3
+  source:
+    type: Git
+    git:
+      uri: https://github.com/SimonDelord/alleo-work.git
+      ref: main
+    contextDir: poc/fleet-integration
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile.crusher-capacity-monitor
+  output:
+    to:
+      kind: ImageStreamTag
+      name: crusher-capacity-monitor:latest
   triggers:
     - type: ConfigChange

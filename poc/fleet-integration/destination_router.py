@@ -4,7 +4,8 @@ Routing intelligence: consumes truck telemetry and crusher state from Kafka,
 decides destination changes, and produces fleet.routing.commands.
 
 When both crushers are at capacity, hauling trucks receive stop commands on
-fleet.truck.commands. Resume when capacity is available again.
+fleet.truck.commands. Resume when fill drops below threshold is handled by
+crusher-capacity-monitor (MQTT direct).
 
 This service lives in fleet-integration — not in truck-fleet or crusher-fleet.
 """
@@ -263,18 +264,8 @@ class DestinationRouter:
                 LOG.info("Manual haul hold cleared for %s (reason=%s)", truck_id, reason)
 
     def _evaluate_fleet_stop(self) -> None:
-        if self._all_crushers_at_capacity():
-            with self._lock:
-                truck_ids = list(self._trucks.keys())
-            for truck_id in truck_ids:
-                with self._lock:
-                    truck = self._trucks.get(truck_id)
-                if truck is None:
-                    continue
-                if str(truck.get("state", "")) in HAULING_STATES:
-                    self._emit_truck_command(truck_id, "stop", STOP_REASON)
+        if not self._all_crushers_at_capacity():
             return
-
         with self._lock:
             truck_ids = list(self._trucks.keys())
         for truck_id in truck_ids:
@@ -282,13 +273,8 @@ class DestinationRouter:
                 truck = self._trucks.get(truck_id)
             if truck is None:
                 continue
-            if str(truck.get("state", "")) == "stopped":
-                if self._is_manual_haul_hold(truck_id):
-                    continue
-                with self._lock:
-                    if truck_id not in self._stopped_by_router:
-                        continue
-                self._emit_truck_command(truck_id, "resume", "crusher_capacity_available")
+            if str(truck.get("state", "")) in HAULING_STATES:
+                self._emit_truck_command(truck_id, "stop", STOP_REASON)
 
     def _evaluate_truck(self, truck_id: str) -> None:
         if self._all_crushers_at_capacity():

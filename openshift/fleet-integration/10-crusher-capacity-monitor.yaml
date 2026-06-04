@@ -1,0 +1,35 @@
+# Resumes stopped haul trucks when crusher fill drops below threshold (default 50%).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crusher-capacity-monitor
+  namespace: fleet-integration
+  labels:
+    app: crusher-capacity-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crusher-capacity-monitor
+  template:
+    metadata:
+      labels:
+        app: crusher-capacity-monitor
+    spec:
+      containers:
+        - name: crusher-capacity-monitor
+          image: image-registry.openshift-image-registry.svc:5000/fleet-integration/crusher-capacity-monitor:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: fleet-integration-env
+          env:
+            - name: KAFKA_CONSUMER_GROUP
+              value: crusher-capacity-monitor
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

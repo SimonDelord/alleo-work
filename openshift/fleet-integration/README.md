@@ -10,12 +10,13 @@ oc apply -f openshift/fleet-integration/01-namespace.yaml
 oc apply -f openshift/fleet-integration/02-configmaps.yaml
 oc apply -f openshift/fleet-integration/03-kafka-topics.yaml   # applies in mining-fleet-kafka namespace
 oc apply -f openshift/fleet-integration/04-buildconfigs.yaml
-oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge \
+oc start-build kafka-truck-bridge destination-router mqtt-routing-bridge crusher-fill-bridge crusher-capacity-monitor \
   -n fleet-integration --wait
 oc apply -f openshift/fleet-integration/05-kafka-truck-bridge.yaml \
          -f openshift/fleet-integration/09-crusher-fill-bridge.yaml \
          -f openshift/fleet-integration/07-destination-router.yaml \
-         -f openshift/fleet-integration/08-mqtt-routing-bridge.yaml
+         -f openshift/fleet-integration/08-mqtt-routing-bridge.yaml \
+         -f openshift/fleet-integration/10-crusher-capacity-monitor.yaml
 ```
 
 Remove deprecated crusher-assignment from truck-fleet:
@@ -48,5 +49,6 @@ oc exec -n crusher-fleet deploy/postgresql -- \
 | `07-destination-router.yaml` | Routing intelligence |
 | `08-mqtt-routing-bridge.yaml` | Kafka → MQTT new-destination bridge |
 | `09-crusher-fill-bridge.yaml` | MQTT truck telemetry → crusher Modbus + Kafka state |
+| `10-crusher-capacity-monitor.yaml` | Kafka crusher/telemetry → MQTT resume + new-destination at fill threshold |
 
 Application source: **`../../poc/fleet-integration/`**.
